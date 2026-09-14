@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, customType } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, customType, primaryKey } from 'drizzle-orm/pg-core'
 
 const bytea = customType<{ data: Buffer }>({
   dataType() { return 'bytea' },
@@ -24,25 +24,27 @@ export const roomMembers = pgTable('room_members', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   roomId: uuid('room_id').notNull().references(() => rooms.id, { onDelete: "cascade" }),
   joinedAt: timestamp('joined_at').defaultNow().notNull()
-});
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.roomId] }) // Composite Primary Key
+]);
 
 export const messages = pgTable('messages', {
-  id:        uuid('id').defaultRandom().primaryKey(),
-  roomId:    uuid('room_id').notNull().references(() => rooms.id, { onDelete: 'cascade' }),
-  userId:    uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  text:      text('text').notNull(),
+  id: uuid('id').defaultRandom().primaryKey(),
+  roomId: uuid('room_id').notNull().references(() => rooms.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  text: text('text').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
 export const yjsSnapshots = pgTable('yjs_snapshots', {
-  roomId:    uuid('room_id').primaryKey().references(() => rooms.id, { onDelete: 'cascade' }),
-  snapshot:  bytea('snapshot').notNull(),
+  roomId: uuid('room_id').primaryKey().references(() => rooms.id, { onDelete: 'cascade' }),
+  snapshot: bytea('snapshot').notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
 export const refreshTokens = pgTable('refresh_tokens', {
-  id:        uuid('id').defaultRandom().primaryKey(),
-  userId:    uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   tokenHash: text('token_hash').notNull(),
   expiresAt: timestamp('expires_at').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
