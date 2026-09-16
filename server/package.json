@@ -23,7 +23,8 @@
     "jsonwebtoken": "^9.0.2",
     "postgres": "^3.4.4",
     "y-protocols": "^1.0.6",
-    "yjs": "^13.6.18"
+    "yjs": "^13.6.18",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

@@ -1,12 +1,4 @@
-import Fastify from 'fastify'
-
-const server = Fastify({
-  logger: process.env.NODE_ENV === 'production',
-})
-
-server.get('/health', async () => {
-  return { status: 'ok' }
-})
+import server from "./app";
 
 const PORT = Number(process.env.PORT) || 3007;
 

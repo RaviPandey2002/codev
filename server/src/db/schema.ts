@@ -1,3 +1,5 @@
+import { index } from 'drizzle-orm/pg-core';
+import { uniqueIndex } from 'drizzle-orm/pg-core';
 import { pgTable, uuid, text, timestamp, customType, primaryKey } from 'drizzle-orm/pg-core'
 
 const bytea = customType<{ data: Buffer }>({
@@ -48,4 +50,7 @@ export const refreshTokens = pgTable('refresh_tokens', {
   tokenHash: text('token_hash').notNull(),
   expiresAt: timestamp('expires_at').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+}, (table)=> [
+  uniqueIndex('refresh_tokens_token_hash_idx').on(table.tokenHash),
+  index('refresh_tokens_user_id_idx').on(table.userId)
+])
