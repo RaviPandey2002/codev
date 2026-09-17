@@ -1,16 +1,20 @@
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
-import { eq, or } from 'drizzle-orm'
+import { eq, or, sql } from 'drizzle-orm'
 import { db } from '../db'
 import { users, refreshTokens } from '../db/schema'
 import { AppError } from '../utils/errors'
-import { RegisterInput } from '../schemas/auth.schema'
+import { LoginInput, RegisterInput } from '../schemas/auth.schema'
+
+
+const DUMMY_HASH = '$2a$12$e8rG.HjK5aZqU1L7mP3sYeN8bV0wX9cT4dF6gH2jK1lM5nP7qR9tS';
 
 export async function register({ username, email, password }: RegisterInput) {
   // 1. Check if email or username is already taken
   const existingUser = await db.query.users.findFirst({
-    where: or(eq(users.email, email), eq(users.username, username)),
+    where: or(eq(users.email, email), 
+    sql`lower(${users.username}) = lower(${username})`),
   });
 
   if (existingUser) {
@@ -70,3 +74,47 @@ export async function register({ username, email, password }: RegisterInput) {
   };
 }
 
+export async function login({ email, password }: LoginInput) {
+
+  const user = await db.query.users.findFirst({ where: eq(users.email, email) });
+
+  const hashToCompare = user ? user.passwordHash : DUMMY_HASH;
+
+  const isPasswordValid = await bcrypt.compare(password, hashToCompare);
+
+  if (!user || !isPasswordValid) {
+    throw new AppError('Invalid email or password', 401, 'INVALID_CREDENTIALS');
+  }
+
+  const jwtSecret = process.env.JWT_SECRET || 'codev-jwt-super-secret-key-replace-in-prod';
+  const accessToken = jwt.sign(
+    {
+      userId: user.id,
+      email: user.email,
+      username: user.username,
+    },
+    jwtSecret,
+    { expiresIn: '15m' }
+  );
+
+  const rawRefreshToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  await db.insert(refreshTokens).values({
+    userId: user.id,
+    tokenHash,
+    expiresAt
+  });
+
+  return ({
+    user: {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      createdAt: user.createdAt
+    },
+    accessToken,
+    refreshToken: rawRefreshToken,
+  })
+}

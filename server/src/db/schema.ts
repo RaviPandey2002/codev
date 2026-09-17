@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { index } from 'drizzle-orm/pg-core';
 import { uniqueIndex } from 'drizzle-orm/pg-core';
 import { pgTable, uuid, text, timestamp, customType, primaryKey } from 'drizzle-orm/pg-core'
@@ -8,11 +9,14 @@ const bytea = customType<{ data: Buffer }>({
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
-  username: text('username').notNull().unique(),
+  username: text('username').notNull(),
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull()
-});
+}, (table) => [
+      uniqueIndex('users_username_lower_idx').
+  on(sql`lower(${table.username})`),
+    ]);
 
 export const rooms = pgTable('rooms', {
   id: uuid('id').defaultRandom().primaryKey(),
