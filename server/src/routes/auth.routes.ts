@@ -3,6 +3,7 @@ import { registerSchema, RegisterInput, loginSchema, LoginInput } from '../schem
 import { validateBody } from '../utils/validate'
 import * as authService from '../services/auth.service'
 import { AppError } from '../utils/errors';
+import { auth } from '../hooks/authenticate';
 
 function setAuthCookies(
   reply: FastifyReply,
@@ -110,4 +111,10 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.status(200).send({ ok: true });
     }
   );
+
+  app.get('/me', { preHandler: [auth] }, async (req, reply) => {
+    return reply.status(200).send({
+      user: req.user
+    })
+  })
 }

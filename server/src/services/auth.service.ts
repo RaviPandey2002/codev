@@ -44,7 +44,12 @@ export async function register({ username, email, password }: RegisterInput) {
     });
 
   // 4. Generate short-lived Access Token (15m)
-  const jwtSecret = process.env.JWT_SECRET || 'codev-jwt-super-secret-key-replace-in-prod';
+  const jwtSecret = process.env.JWT_SECRET;
+
+  if (!jwtSecret) {
+    throw new AppError("JWT secret initialized", 500, "INTERNAL_SERVER_ERROR");
+  }
+
   const accessToken = jwt.sign(
     {
       userId: newUser.id,
@@ -86,7 +91,12 @@ export async function login({ email, password }: LoginInput) {
     throw new AppError('Invalid email or password', 401, 'INVALID_CREDENTIALS');
   }
 
-  const jwtSecret = process.env.JWT_SECRET || 'codev-jwt-super-secret-key-replace-in-prod';
+  const jwtSecret = process.env.JWT_SECRET;
+
+  if (!jwtSecret) {
+    throw new AppError("JWT secret initialized", 500, "INTERNAL_SERVER_ERROR");
+  }
+
   const accessToken = jwt.sign(
     {
       userId: user.id,
@@ -155,7 +165,11 @@ export async function refresh(rawRefreshToken: string) {
     });
   });
 
-  const jwtSecret = process.env.JWT_SECRET || 'codev-jwt-super-secret-key-replace-in-prod';
+  const jwtSecret = process.env.JWT_SECRET;
+
+  if (!jwtSecret) {
+    throw new AppError("JWT secret initialized", 500, "INTERNAL_SERVER_ERROR");
+  }
 
   const accessToken = jwt.sign({
     userId: user.id,
