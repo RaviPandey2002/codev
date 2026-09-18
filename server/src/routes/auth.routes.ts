@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyReply } from 'fastify'
 import { registerSchema, RegisterInput, loginSchema, LoginInput } from '../schemas/auth.schema'
 import { validateBody } from '../utils/validate'
 import * as authService from '../services/auth.service'
+import { AppError } from '../utils/errors';
 
 function setAuthCookies(
   reply: FastifyReply,
@@ -24,8 +25,13 @@ function setAuthCookies(
   });
 }
 
-export default async function authRoutes(server: FastifyInstance) {
-  server.post(
+function clearAuthCookies(reply: FastifyReply) {
+  reply.clearCookie('accessToken', { path: '/' });
+  reply.clearCookie('refreshToken', { path: '/' });
+}
+
+export default async function authRoutes(app: FastifyInstance) {
+  app.post(
     '/register',
     { preHandler: validateBody(registerSchema) },
     async (req, reply) => {
@@ -49,7 +55,8 @@ export default async function authRoutes(server: FastifyInstance) {
       });
     }
   );
-  server.post(
+
+  app.post(
     '/login',
     { preHandler: validateBody(loginSchema) },
     async (req, reply) => {
@@ -67,5 +74,40 @@ export default async function authRoutes(server: FastifyInstance) {
         accessToken
       });
     }
-  )
+  );
+
+  app.post(
+    '/refresh',
+    async (req, reply) => {
+
+      const rawRefreshToken = req.cookies.refreshToken
+
+      if (!rawRefreshToken) {
+        throw new AppError('Session expired. Please log in again.', 401, 'REFRESH_TOKEN_INVALID');
+      }
+
+      const { user, accessToken, refreshToken } = await authService.refresh(rawRefreshToken);
+
+      setAuthCookies(reply, {
+        accessToken,
+        refreshToken
+      });
+
+      return reply.status(200).send({ ok: true, accessToken, user });
+    }
+  );
+
+  app.post(
+    '/logout',
+    async (req, reply) => {
+
+      const rawRefreshToken = req.cookies.refreshToken
+
+      await authService.logout(rawRefreshToken);
+
+      clearAuthCookies(reply);
+
+      return reply.status(200).send({ ok: true });
+    }
+  );
 }

@@ -13,8 +13,8 @@ const DUMMY_HASH = '$2a$12$e8rG.HjK5aZqU1L7mP3sYeN8bV0wX9cT4dF6gH2jK1lM5nP7qR9tS
 export async function register({ username, email, password }: RegisterInput) {
   // 1. Check if email or username is already taken
   const existingUser = await db.query.users.findFirst({
-    where: or(eq(users.email, email), 
-    sql`lower(${users.username}) = lower(${username})`),
+    where: or(eq(users.email, email),
+      sql`lower(${users.username}) = lower(${username})`),
   });
 
   if (existingUser) {
@@ -117,4 +117,74 @@ export async function login({ email, password }: LoginInput) {
     accessToken,
     refreshToken: rawRefreshToken,
   })
+}
+
+export async function refresh(rawRefreshToken: string) {
+  const tokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
+
+  const storedToken = await db.query.refreshTokens.findFirst({ where: eq(refreshTokens.tokenHash, tokenHash) });
+
+  if (!storedToken) {
+    throw new AppError('Session expired. Please log in again.', 401, 'REFRESH_TOKEN_INVALID');
+  }
+
+  if (storedToken.expiresAt < new Date()) {
+    await db.delete(refreshTokens).where(eq(refreshTokens.id, storedToken.id));
+
+    throw new AppError('Session expired. Please log in again.', 401, 'REFRESH_TOKEN_INVALID');
+  }
+
+  const user = await db.query.users.findFirst({ where: eq(users.id, storedToken.userId) });
+
+  if (!user) {
+    await db.delete(refreshTokens).where(eq(refreshTokens.id, storedToken.id));
+
+    throw new AppError('Session expired. Please log in again.', 401, 'REFRESH_TOKEN_INVALID');
+  }
+
+  const newRawRefreshToken = crypto.randomBytes(32).toString('hex');
+  const newTokenHash = crypto.createHash('sha256').update(newRawRefreshToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(refreshTokens).where(eq(refreshTokens.id, storedToken.id));
+    await tx.insert(refreshTokens).values({
+      userId: user.id,
+      tokenHash: newTokenHash,
+      expiresAt,
+    });
+  });
+
+  const jwtSecret = process.env.JWT_SECRET || 'codev-jwt-super-secret-key-replace-in-prod';
+
+  const accessToken = jwt.sign({
+    userId: user.id,
+    email: user.email,
+    username: user.username,
+  },
+    jwtSecret,
+    {
+      expiresIn: '15m'
+    }
+  );
+
+  return {
+    user: {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      createdAt: user.createdAt,
+    },
+    accessToken,
+    refreshToken: newRawRefreshToken,
+  };
+
+}
+
+export async function logout(rawRefreshToken?: string) {
+  if (!rawRefreshToken) return;
+  const tokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
+
+  await db.delete(refreshTokens).where(eq(refreshTokens.tokenHash, tokenHash));
+
 }

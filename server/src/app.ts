@@ -7,25 +7,25 @@ import { AppError } from './utils/errors';
 import { ZodError } from 'zod';
 
 
-const server = Fastify({
+const app = Fastify({
   logger: process.env.NODE_ENV === 'production',
 });
 
-server.register(cors, {
+app.register(cors, {
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true
 });
-server.register(cookie, {
+app.register(cookie, {
   secret: process.env.COOKIE_SECRET,
 });
 
-server.get('/health', async () => {
+app.get('/health', async () => {
   return { status: 'ok' }
 })
 
-server.register(authRoutes, { prefix: "/auth" });
+app.register(authRoutes, { prefix: "/auth" });
 
-server.setErrorHandler((error, req, reply) => {
+app.setErrorHandler((error, req, reply) => {
   if (error instanceof AppError) {
     return reply.status(error.statusCode).send({
       error: {
@@ -57,7 +57,7 @@ server.setErrorHandler((error, req, reply) => {
 
   return reply.status(500).send({
     error: {
-      code: 'INTERNAL_SERVER_ERROR',
+      code: 'INTERNAL_app_ERROR',
       message: process.env.NODE_ENV === 'production'
         ? 'An unexpected error occurred'
         : error.message,
@@ -66,4 +66,4 @@ server.setErrorHandler((error, req, reply) => {
 
 })
 
-export default server;
+export default app;
