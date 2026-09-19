@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { registerSchema, type RegisterInput } from '@codev/shared';
-import { Link, useNavigate } from 'react-router';
-import { Eye, EyeOff, Loader2, Code2, Mail, Lock, User as UserIcon, Sparkles, ArrowRight } from 'lucide-react';
+import { Link, useNavigate, Navigate } from 'react-router';
+import { Eye, EyeOff, Loader2, Code2, Mail, Lock, User as UserIcon, Sparkles, ArrowRight, ArrowLeft } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,7 +17,13 @@ export default function RegisterPage() {
   const [serverError, setServerError] = useState<string | null>(null);
 
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
+  const isLoading = useAuthStore((s) => s.isLoading);
   const setUser = useAuthStore((s) => s.setUser);
+
+  if (!isLoading && user) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   const {
     register,
@@ -37,7 +43,7 @@ export default function RegisterPage() {
       setServerError(null);
       const res = await api.post<{ user: User; accessToken: string }>('/auth/register', data);
       setUser(res.data.user);
-      navigate('/');
+      navigate('/dashboard');
     } catch (err) {
       setServerError(getApiErrorMessage(err));
     }
@@ -49,20 +55,26 @@ export default function RegisterPage() {
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
 
       <header className="w-full max-w-6xl mx-auto px-6 py-4 flex items-center justify-between z-10">
-        <div className="flex items-center gap-2.5">
+        <Link to="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
           <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
             <Code2 size={18} />
           </div>
           <span className="font-bold tracking-tight text-lg">
             Code<span className="text-primary font-mono">V</span>
           </span>
-        </div>
+        </Link>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 px-2.5 py-1 rounded-full border border-border/50">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>CRDT Sync Online</span>
-          </div>
+        <div className="flex items-center gap-4">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft size={14} />
+            <span>Back to home</span>
+          </Link>
+
+          <div className="h-4 w-px bg-border/60" />
+
           <ThemeToggle />
         </div>
       </header>

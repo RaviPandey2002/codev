@@ -20,7 +20,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: true,
 
-  setUser: (user) => set({ user }),
+  setUser: (user) => set({ user, isLoading: false }),
 
   checkAuth: async () => {
     try {
@@ -35,7 +35,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       await api.post('/auth/logout');
     } finally {
-      set({ user: null })
+      set({ user: null, isLoading: false });
     }
   }
 }))
