@@ -5,7 +5,7 @@ import { eq, or, sql } from 'drizzle-orm'
 import { db } from '../db'
 import { users, refreshTokens } from '../db/schema'
 import { AppError } from '../utils/errors'
-import { LoginInput, RegisterInput } from '../schemas/auth.schema'
+import { LoginInput, RegisterInput } from '@codev/shared'
 
 
 const DUMMY_HASH = '$2a$12$e8rG.HjK5aZqU1L7mP3sYeN8bV0wX9cT4dF6gH2jK1lM5nP7qR9tS';

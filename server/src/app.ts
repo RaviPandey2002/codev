@@ -3,6 +3,7 @@ import 'dotenv/config'
 import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
 import authRoutes from './routes/auth.routes';
+import roomRoutes from './routes/rooms.routes';
 import { AppError } from './utils/errors';
 import { ZodError } from 'zod';
 
@@ -24,6 +25,8 @@ app.get('/health', async () => {
 })
 
 app.register(authRoutes, { prefix: "/auth" });
+app.register(roomRoutes, { prefix: "/rooms" });
+
 
 app.setErrorHandler((error, req, reply) => {
   if (error instanceof AppError) {

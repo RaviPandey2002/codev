@@ -23,3 +23,4 @@ export const validateRequest = (validators: RequestValidators) => {
 
 
 export const validateBody = (schema: ZodType) => validateRequest({ body: schema });
+export const validateParams = (schema: ZodType) => validateRequest({ params: schema });

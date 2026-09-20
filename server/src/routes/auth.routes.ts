@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyReply } from 'fastify'
-import { registerSchema, RegisterInput, loginSchema, LoginInput } from '../schemas/auth.schema'
+import { registerSchema, RegisterInput, loginSchema, LoginInput } from '@codev/shared'
 import { validateBody } from '../utils/validate'
 import * as authService from '../services/auth.service'
 import { AppError } from '../utils/errors';
