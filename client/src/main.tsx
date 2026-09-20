@@ -9,6 +9,7 @@ import LandingPage from '@/pages/LandingPage'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 import DashboardPage from '@/pages/DashboardPage'
+import RoomPage from '@/pages/RoomPage'
 
 function App() {
   const checkAuth = useAuthStore((s) => s.checkAuth)
@@ -29,7 +30,9 @@ function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/rooms" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/rooms/:roomId" element={<RoomPage />} />
         </Route>
+
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -60,9 +60,9 @@ export default function LoginPage() {
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* 3. Top Navigation Bar */}
-      <header className="w-full max-w-6xl mx-auto px-6 py-4 flex items-center justify-between z-10">
-        <Link to="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
-          <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
+      <header className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between z-10">
+        <Link to="/" className="flex items-center gap-2 sm:gap-2.5 hover:opacity-90 transition-opacity">
+          <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs shrink-0">
             <Code2 size={18} />
           </div>
           <span className="font-bold tracking-tight text-lg">
@@ -70,13 +70,13 @@ export default function LoginPage() {
           </span>
         </Link>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           <Link
             to="/"
             className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft size={14} />
-            <span>Back to home</span>
+            <span className="hidden sm:inline">Back to home</span>
           </Link>
 
           <div className="h-4 w-px bg-border/60" />
@@ -86,16 +86,16 @@ export default function LoginPage() {
       </header>
 
       {/* 4. Center Auth Card */}
-      <main className="w-full max-w-md mx-auto px-6 my-auto z-10">
-        <div className="bg-card/75 backdrop-blur-xl border border-border/60 shadow-2xl shadow-black/10 dark:shadow-black/40 rounded-2xl p-7 sm:p-9 space-y-6">
+      <main className="w-full max-w-md mx-auto px-4 sm:px-6 py-6 sm:py-8 my-auto z-10">
+        <div className="bg-card/75 backdrop-blur-xl border border-border/60 shadow-2xl shadow-black/10 dark:shadow-black/40 rounded-2xl p-5 sm:p-8 space-y-5 sm:space-y-6">
           {/* Card Header */}
           <div className="space-y-2 text-left">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
               <Sparkles size={12} />
               <span>Real-Time Collaborative IDE</span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Welcome back</h1>
-            <p className="text-sm text-muted-foreground">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Welcome back</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground">
               Enter your credentials to access your shared workspaces.
             </p>
           </div>

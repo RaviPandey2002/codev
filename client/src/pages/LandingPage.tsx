@@ -37,9 +37,9 @@ export default function LandingPage() {
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Navigation Bar */}
-      <header className="w-full max-w-6xl mx-auto px-6 py-4 flex items-center justify-between z-10">
-        <Link to="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
-          <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
+      <header className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between z-10">
+        <Link to="/" className="flex items-center gap-2 sm:gap-2.5 hover:opacity-90 transition-opacity">
+          <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs shrink-0">
             <Code2 size={18} />
           </div>
           <span className="font-bold tracking-tight text-lg">
@@ -50,7 +50,7 @@ export default function LandingPage() {
           </span>
         </Link>
 
-        <nav className="flex items-center gap-2.5">
+        <nav className="flex items-center gap-1.5 sm:gap-2.5">
           <ThemeToggle />
           <a
             href="https://github.com/RaviPandey2002/codev"
@@ -62,15 +62,15 @@ export default function LandingPage() {
           </a>
 
           {user ? (
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="text-xs">
               <Link to="/dashboard">Go to Workspace</Link>
             </Button>
           ) : (
             <>
-              <Button asChild variant="ghost" size="sm">
+              <Button asChild variant="ghost" size="sm" className="hidden xs:inline-flex text-xs">
                 <Link to="/login">Sign in</Link>
               </Button>
-              <Button asChild size="sm">
+              <Button asChild size="sm" className="text-xs">
                 <Link to="/register">Get started</Link>
               </Button>
             </>
@@ -79,31 +79,31 @@ export default function LandingPage() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 z-10 max-w-5xl mx-auto space-y-20">
+      <main className="flex-1 flex flex-col items-center justify-center text-center px-4 sm:px-6 py-8 sm:py-12 z-10 max-w-5xl mx-auto space-y-12 sm:space-y-20">
         
         {/* Section 1: Hero */}
-        <div className="space-y-4 max-w-3xl pt-6">
+        <div className="space-y-4 max-w-3xl pt-2 sm:pt-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-muted/60 border border-border/80 text-muted-foreground">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span>CRDT-powered real-time sync engine</span>
           </div>
 
-          <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight leading-[1.1]">
+          <h1 className="text-3xl sm:text-6xl font-extrabold tracking-tight leading-[1.1]">
             Real-time collaborative code editing.
           </h1>
 
-          <p className="text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+          <p className="text-sm sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             Deterministic conflict resolution, sub-millisecond multi-cursor presence, and persistent shared rooms. Built from scratch with Yjs and WebSockets.
           </p>
 
-          <div className="flex items-center justify-center gap-3 pt-2">
-            <Button asChild size="lg" className="gap-2 text-sm font-medium shadow-sm">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 w-full max-w-xs sm:max-w-none mx-auto">
+            <Button asChild size="lg" className="gap-2 text-sm font-medium shadow-sm w-full sm:w-auto">
               <Link to={user ? '/dashboard' : '/register'}>
                 <span>{user ? 'Open Workspace' : 'Start Coding'}</span>
                 <ArrowRight size={15} />
               </Link>
             </Button>
-            <Button asChild variant="outline" size="lg" className="gap-2 text-sm font-medium">
+            <Button asChild variant="outline" size="lg" className="gap-2 text-sm font-medium w-full sm:w-auto">
               <a
                 href="https://github.com/RaviPandey2002/codev"
                 target="_blank"
@@ -118,23 +118,26 @@ export default function LandingPage() {
 
         {/* Section 2: Mock IDE Preview */}
         <div className="w-full max-w-4xl rounded-xl border border-border/80 bg-card/80 backdrop-blur-xl shadow-2xl shadow-black/20 overflow-hidden text-left font-mono">
-          <div className="bg-muted/40 border-b border-border/60 px-4 py-2.5 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-3 rounded-full bg-destructive/60" />
-              <div className="h-3 w-3 rounded-full bg-amber-500/60" />
-              <div className="h-3 w-3 rounded-full bg-emerald-500/60" />
-              <span className="ml-3 text-xs text-muted-foreground font-sans flex items-center gap-1.5">
-                <Terminal size={12} />
-                main.ts &middot; room: apollo-dev
+          <div className="bg-muted/40 border-b border-border/60 px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-destructive/60" />
+                <div className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-amber-500/60" />
+                <div className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-emerald-500/60" />
+              </div>
+              <span className="ml-1 sm:ml-3 text-xs text-muted-foreground font-sans flex items-center gap-1.5 truncate">
+                <Terminal size={12} className="shrink-0" />
+                <span className="truncate">main.ts &middot; apollo-dev</span>
               </span>
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-sans">
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-sans shrink-0">
               <Users size={12} />
-              <span>2 peers connected</span>
+              <span>2 peers</span>
             </div>
           </div>
 
-          <div className="p-6 text-xs sm:text-sm leading-relaxed overflow-x-auto select-none bg-background/50">
+
+          <div className="p-3.5 sm:p-6 text-xs sm:text-sm leading-relaxed overflow-x-auto select-none bg-background/50">
             <div className="flex">
               <span className="text-muted-foreground/40 select-none pr-4">1</span>
               <span className="text-muted-foreground">// Shared CRDT state synchronization</span>
@@ -422,7 +425,7 @@ export default function LandingPage() {
         </div>
 
         {/* Section 6: Final CTA */}
-        <div className="w-full rounded-2xl border border-primary/20 bg-primary/5 p-8 sm:p-10 space-y-4 text-center">
+        <div className="w-full rounded-2xl border border-primary/20 bg-primary/5 p-6 sm:p-10 space-y-4 text-center">
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
             Ready to collaborate in real-time?
           </h2>
@@ -441,7 +444,7 @@ export default function LandingPage() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full max-w-6xl mx-auto px-6 py-6 text-center text-xs text-muted-foreground/60 border-t border-border/40 z-10 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono">
+      <footer className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 text-center text-xs text-muted-foreground/60 border-t border-border/40 z-10 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono">
         <div>CodeV &middot; Real-Time Collaborative Code Editor</div>
         <div className="flex items-center gap-4">
           <a
