@@ -14,8 +14,9 @@ services:
     volumes:
       - codev_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U codev -d codev"]
+      test: ["CMD-SHELL", "pg_isready -U dev -d codev"]
       interval: 5s
+
       timeout: 5s
       retries: 5
 
