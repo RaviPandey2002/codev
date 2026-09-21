@@ -2,10 +2,11 @@ import Fastify from 'fastify'
 import 'dotenv/config'
 import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
-import authRoutes from './routes/auth.routes';
-import roomRoutes from './routes/rooms.routes';
-import { AppError } from './utils/errors';
+import authRoutes from './routes/auth.routes.js';
+import roomRoutes from './routes/rooms.routes.js';
+import { AppError } from './utils/errors.js';
 import { ZodError } from 'zod';
+import fastifyWebsocket from '@fastify/websocket';
 
 
 const app = Fastify({
@@ -16,9 +17,12 @@ app.register(cors, {
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true
 });
+
 app.register(cookie, {
   secret: process.env.COOKIE_SECRET,
 });
+
+app.register(fastifyWebsocket);
 
 app.get('/health', async () => {
   return { status: 'ok' }
