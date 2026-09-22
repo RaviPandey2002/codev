@@ -23,7 +23,7 @@ class RoomHub {
 
   private rooms = new Map<string, RoomSession>();
 
-  async getOrCreateRoom(roomId: string): Promise<RoomSession> {
+  async getOrCreateRoomSession(roomId: string): Promise<RoomSession> {
 
     // 1. If the room is already loaded in RAM, return it immediately!
     let room = this.rooms.get(roomId);
@@ -100,7 +100,7 @@ class RoomHub {
     roomId: string,
     user: { id: string, username: string }
   ) {
-    const room = await this.getOrCreateRoom(roomId);
+    const room = await this.getOrCreateRoomSession(roomId);
     const controlledIds = new Set<number>();
 
     room.conns.set(conn, controlledIds);

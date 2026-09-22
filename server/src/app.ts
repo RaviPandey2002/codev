@@ -7,6 +7,7 @@ import roomRoutes from './routes/rooms.routes.js';
 import { AppError } from './utils/errors.js';
 import { ZodError } from 'zod';
 import fastifyWebsocket from '@fastify/websocket';
+import wsRoutes from './routes/ws.routes.js';
 
 
 const app = Fastify({
@@ -23,6 +24,8 @@ app.register(cookie, {
 });
 
 app.register(fastifyWebsocket);
+
+app.register(wsRoutes, { prefix: "/ws" });
 
 app.get('/health', async () => {
   return { status: 'ok' }
