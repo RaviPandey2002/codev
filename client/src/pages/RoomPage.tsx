@@ -1,20 +1,20 @@
-import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router';
 import {
+  AlertCircle,
+  ArrowLeft,
+  Check,
   Code2,
   Copy,
-  Check,
-  ArrowLeft,
-  Activity,
-  Loader2,
-  AlertCircle,
   FileCode,
+  Loader2,
   Sparkles
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router';
 
-import { Button } from '@/components/ui/button';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { getRoomDetailsApi } from '@/api/rooms';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { Button } from '@/components/ui/button';
+import { CollaborativeEditor } from '@/components/editor/CollaborativeEditor';
 import { getApiErrorMessage } from '@/lib/api';
 import type { RoomDTO, RoomFileDTO, RoomRole } from '@codev/shared';
 
@@ -27,6 +27,8 @@ export default function RoomPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState(false);
+  const [peerCount, setPeerCount] = useState(1);
+  const [isSynced, setIsSynced] = useState(false);
 
   useEffect(() => {
     if (!roomId) return;
@@ -151,17 +153,16 @@ export default function RoomPage() {
 
           {/* Peer Presence Pill */}
           <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs font-mono text-emerald-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <span>1 <span className="hidden sm:inline">Peer Active</span></span>
+            <span className={`h-1.5 w-1.5 rounded-full ${isSynced ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'} shrink-0`} />
+            <span>{peerCount} <span className="hidden sm:inline">{peerCount === 1 ? 'Peer Active' : 'Peers Active'}</span></span>
           </div>
 
           {/* User Role Badge */}
           <span
-            className={`hidden xs:inline-block text-[10px] font-mono px-1.5 sm:px-2 py-0.5 rounded border uppercase font-semibold ${
-              userRole === 'OWNER'
-                ? 'bg-primary/10 text-primary border-primary/20'
-                : 'bg-muted text-muted-foreground border-border/60'
-            }`}
+            className={`hidden xs:inline-block text-[10px] font-mono px-1.5 sm:px-2 py-0.5 rounded border uppercase font-semibold ${userRole === 'OWNER'
+              ? 'bg-primary/10 text-primary border-primary/20'
+              : 'bg-muted text-muted-foreground border-border/60'
+              }`}
           >
             {userRole}
           </span>
@@ -183,37 +184,27 @@ export default function RoomPage() {
             </div>
 
             <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-mono text-muted-foreground shrink-0">
-              <Sparkles size={12} className="text-primary shrink-0" />
-              <span className="hidden xs:inline">Real-Time Sync Ready</span>
-              <span className="xs:hidden">Live</span>
+              <Sparkles size={12} className={isSynced ? 'text-primary' : 'text-amber-500'} />
+              <span className="hidden xs:inline">{isSynced ? 'Real-Time Sync Ready' : 'Connecting...'}</span>
+              <span className="xs:hidden">{isSynced ? 'Live' : 'Connecting'}</span>
             </div>
           </div>
 
-          {/* File Content Preview / Collaborative Canvas Placeholder */}
-          <div className="flex-1 p-3 sm:p-6 font-mono text-xs overflow-auto bg-background/50">
-            <div className="max-w-3xl space-y-3 sm:space-y-4">
-              <div className="p-3.5 sm:p-4 rounded-xl border border-primary/20 bg-primary/5 text-foreground space-y-1.5">
-                <div className="flex items-center gap-2 text-primary font-bold text-xs">
-                  <Activity size={14} />
-                  <span>Workspace Connected: {room.name}</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  Database room record initialized. Initial file <code className="text-primary font-semibold">{activeFile?.path}</code> seeded.
-                  In the next step, Monaco Editor with live Yjs WebSocket delta synchronization will be mounted here.
-                </p>
-              </div>
-
-              {/* Seed Code Render */}
-              <div className="rounded-lg border border-border/60 bg-card/80 p-3 sm:p-4 shadow-inner">
-                <div className="text-[11px] text-muted-foreground mb-2 flex items-center justify-between border-b border-border/40 pb-2">
-                  <span>Initial Boilerplate ({activeFile?.path})</span>
-                  <span>{activeFile?.content.length || 0} bytes</span>
-                </div>
-                <pre className="text-foreground leading-relaxed overflow-x-auto whitespace-pre text-[11px] sm:text-xs">
-                  {activeFile?.content}
-                </pre>
-              </div>
-            </div>
+          {/* Collaborative Monaco Editor Canvas */}
+          <div className="flex-1 min-h-0 relative">
+            <CollaborativeEditor
+              roomId={room.id}
+              language={
+                activeFile?.path.endsWith('.cpp')
+                  ? 'cpp'
+                  : activeFile?.path.endsWith('.py')
+                    ? 'python'
+                    : 'typescript'
+              }
+              readOnly={userRole === 'VIEWER'}
+              onPeerCountChange={setPeerCount}
+              onSyncChange={setIsSynced}
+            />
           </div>
         </div>
       </main>
