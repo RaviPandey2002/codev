@@ -195,6 +195,9 @@ importers:
       lucide-react:
         specifier: ^1.25.0
         version: 1.25.0(react@19.2.8)
+      monaco-editor:
+        specifier: ^0.56.0
+        version: 0.56.0
       radix-ui:
         specifier: ^1.6.4
         version: 1.6.4(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
