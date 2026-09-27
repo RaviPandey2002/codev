@@ -15,6 +15,8 @@ interface CollaborativeEditorProps {
   readOnly?: boolean;
   onPeerCountChange?: (count: number) => void;
   onSyncChange?: (synced: boolean) => void;
+  onDocReady?: (doc: Y.Doc) => void;
+  onRunShortcut?: () => void;
 }
 
 const CURSOR_STYLES = `
@@ -53,6 +55,8 @@ export function CollaborativeEditor({
   readOnly = false,
   onPeerCountChange,
   onSyncChange,
+  onDocReady,
+  onRunShortcut,
 }: CollaborativeEditorProps) {
   const user = useAuthStore((s) => s.user);
   const theme = useThemeStore((s) => s.theme);
@@ -62,11 +66,19 @@ export function CollaborativeEditor({
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<WebsocketProvider | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
+  const onRunRef = useRef(onRunShortcut);
+  onRunRef.current = onRunShortcut;
 
-  const handleEditorDidMount: OnMount = (editor) => {
+  const handleEditorDidMount: OnMount = (editor, monaco) => {
     // 1. Initialize a new Yjs document
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
+    onDocReady?.(ydoc);
+
+    // Register Ctrl/Cmd + Enter shortcut to run code directly from the editor
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+      onRunRef.current?.();
+    });
 
     // 2. Derive the WebSocket URL (port 3007)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
