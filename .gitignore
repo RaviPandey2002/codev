@@ -32,3 +32,6 @@ Thumbs.db
 
 # Docker
 .docker/
+
+# Local notes & documentation
+notes/

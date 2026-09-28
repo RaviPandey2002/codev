@@ -1,5 +1,6 @@
 import { getPeerColor } from '@/lib/colors';
 import { useAuthStore } from '@/stores/auth.store';
+import { useThemeStore } from '@/stores/theme.store';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -7,7 +8,12 @@ import { MonacoBinding } from 'y-monaco';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 
-import { useThemeStore } from '@/stores/theme.store';
+export interface CollaborativeEditorHandle {
+  getCode: () => string;
+  setCode: (newCode: string) => void;
+  formatCode: () => void;
+  getDoc: () => Y.Doc | null;
+}
 
 interface CollaborativeEditorProps {
   roomId: string;
@@ -15,8 +21,9 @@ interface CollaborativeEditorProps {
   readOnly?: boolean;
   onPeerCountChange?: (count: number) => void;
   onSyncChange?: (synced: boolean) => void;
-  onDocReady?: (doc: Y.Doc) => void;
+  onDocReady?: (doc: Y.Doc, handle: CollaborativeEditorHandle) => void;
   onRunShortcut?: () => void;
+  onCursorChange?: (pos: { lineNumber: number; column: number }) => void;
 }
 
 const CURSOR_STYLES = `
@@ -57,23 +64,40 @@ export function CollaborativeEditor({
   onSyncChange,
   onDocReady,
   onRunShortcut,
+  onCursorChange,
 }: CollaborativeEditorProps) {
   const user = useAuthStore((s) => s.user);
   const theme = useThemeStore((s) => s.theme);
-  const [isConnecting, setIsConnecting] = useState(true);
+  const [isConnecting, setIsConnecting] = useState(false);
 
-  // Keep references to our CRDT & WebSocket objects so they survive re-renders
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<WebsocketProvider | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
+  const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const onRunRef = useRef(onRunShortcut);
   onRunRef.current = onRunShortcut;
+  const onCursorRef = useRef(onCursorChange);
+  onCursorRef.current = onCursorChange;
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
+    bindingRef.current?.destroy();
+    providerRef.current?.destroy();
+    ydocRef.current?.destroy();
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+
+    editorRef.current = editor;
+
+    editor.onDidChangeCursorPosition((e) => {
+      onCursorRef.current?.({
+        lineNumber: e.position.lineNumber,
+        column: e.position.column,
+      });
+    });
+
     // 1. Initialize a new Yjs document
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
-    onDocReady?.(ydoc);
 
     // Register Ctrl/Cmd + Enter shortcut to run code directly from the editor
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
@@ -101,7 +125,46 @@ export function CollaborativeEditor({
         provider.awareness as any
       );
       bindingRef.current = binding;
+
+      ytext.observe(() => {
+        const latest = ytext.toString();
+        if (model.getValue() !== latest) {
+          model.setValue(latest);
+        }
+      });
     }
+
+    const controller: CollaborativeEditorHandle = {
+      getCode: () => {
+        const currentModel = editorRef.current?.getModel();
+        if (currentModel) return currentModel.getValue();
+        return ydocRef.current?.getText('monaco').toString() || '';
+      },
+      setCode: (newCode: string) => {
+        const currentModel = editorRef.current?.getModel();
+        const currentDoc = ydocRef.current;
+
+        if (currentModel && currentModel.getValue() !== newCode) {
+          currentModel.setValue(newCode);
+        }
+
+        if (currentDoc) {
+          const sharedText = currentDoc.getText('monaco');
+          if (sharedText.toString() !== newCode) {
+            currentDoc.transact(() => {
+              sharedText.delete(0, sharedText.length);
+              sharedText.insert(0, newCode);
+            });
+          }
+        }
+      },
+      formatCode: () => {
+        editorRef.current?.getAction('editor.action.formatDocument')?.run();
+      },
+      getDoc: () => ydocRef.current,
+    };
+
+    onDocReady?.(ydoc, controller);
 
     // 5. Broadcast our username & cursor color to other peers
     const username = user?.username || 'Anonymous';
@@ -111,42 +174,72 @@ export function CollaborativeEditor({
       color: color,
     });
 
-    // 6. Listen for connection sync events
-    provider.on('sync', (isSynced: boolean) => {
+    // 6. Non-blocking connection sync handling with safety timeout
+    if (provider.synced) {
+      setIsConnecting(false);
+      onSyncChange?.(true);
+    } else {
+      setIsConnecting(true);
+    }
+
+    const handleSync = (isSynced: boolean) => {
       setIsConnecting(!isSynced);
       onSyncChange?.(isSynced);
-    });
+      if (isSynced && syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+    };
 
-    // 7. Track peer count changes in the room
+    const handleStatus = ({ status }: { status: string }) => {
+      if (status === 'connected' && provider.synced) {
+        setIsConnecting(false);
+        onSyncChange?.(true);
+      }
+    };
+
+    provider.on('sync', handleSync);
+    provider.on('status', handleStatus);
+
+    // Safety timeout: never leave the user locked or displaying a sync spinner indefinitely
+    syncTimeoutRef.current = setTimeout(() => {
+      setIsConnecting(false);
+    }, 1500);
+
+    // 7. Track peer count changes (only notify parent when count actually changes)
+    let lastCount = -1;
     const updatePeerCount = () => {
-      const activePeers = provider.awareness.getStates().size;
-      onPeerCountChange?.(activePeers);
+      const count = provider.awareness.getStates().size;
+      if (count !== lastCount) {
+        lastCount = count;
+        onPeerCountChange?.(count);
+      }
     };
 
     provider.awareness.on('change', updatePeerCount);
     updatePeerCount();
   };
 
-  // Clean up when leaving the room (prevents memory leaks & closes socket)
   useEffect(() => {
     return () => {
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
       bindingRef.current?.destroy();
+      bindingRef.current = null;
       providerRef.current?.destroy();
+      providerRef.current = null;
       ydocRef.current?.destroy();
+      ydocRef.current = null;
     };
-  }, []);
+  }, [roomId]);
 
   return (
     <div className="relative w-full h-full flex-1 min-h-0 overflow-hidden">
       <style>{CURSOR_STYLES}</style>
 
-      {/* Loading Overlay while performing the initial CRDT sync */}
+      {/* Floating unobtrusive syncing pill (non-blocking) */}
       {isConnecting && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/80 backdrop-blur-xs">
-          <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
-            <Loader2 size={16} className="animate-spin text-primary" />
-            <span>Syncing workspace...</span>
-          </div>
+        <div className="absolute top-2 right-4 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-background/90 border border-border/70 text-[11px] font-mono text-muted-foreground shadow-xs backdrop-blur-xs transition-opacity duration-200">
+          <Loader2 size={12} className="animate-spin text-primary shrink-0" />
+          <span>Syncing workspace...</span>
         </div>
       )}
 
@@ -166,7 +259,7 @@ export function CollaborativeEditor({
           cursorSmoothCaretAnimation: 'on',
           automaticLayout: true,
           scrollBeyondLastLine: false,
-          minimap: { enabled: true, maxColumn: 80 },
+          minimap: { enabled: false },
           wordWrap: 'on',
           lineNumbers: 'on',
           renderLineHighlight: 'all',

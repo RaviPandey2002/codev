@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import type {
   CompilerProfile,
   ExecutionLanguage,
@@ -53,6 +55,22 @@ function getCompileArgs(
   }
 }
 
+function getTsxBinary(): string {
+  try {
+    const fromMeta = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../node_modules/.bin/tsx');
+    if (existsSync(fromMeta)) return fromMeta;
+  } catch {}
+  try {
+    const fromCwd = path.resolve(process.cwd(), 'node_modules/.bin/tsx');
+    if (existsSync(fromCwd)) return fromCwd;
+  } catch {}
+  try {
+    const parentCwd = path.resolve(process.cwd(), '../node_modules/.bin/tsx');
+    if (existsSync(parentCwd)) return parentCwd;
+  } catch {}
+  return 'tsx';
+}
+
 function runProcess(
   command: string,
   args: string[],
@@ -93,6 +111,10 @@ function runProcess(
           stderr = stderr.slice(0, MAX_OUTPUT_BYTES) + '\n[Error output truncated at 64KB]';
         }
       }
+    });
+
+    child.stdin.on('error', () => {
+      // Prevent uncaught EPIPE if child process terminates before reading all stdin
     });
 
     if (stdinInput) {
@@ -210,7 +232,7 @@ export async function executeCode(params: {
       args = [sourceFile];
     } else if (language === 'typescript') {
       sourceFile = 'main.ts';
-      command = new URL('../../node_modules/.bin/tsx', import.meta.url).pathname;
+      command = getTsxBinary();
       args = [sourceFile];
     }
 
