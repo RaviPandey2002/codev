@@ -74,18 +74,50 @@ export function CollaborativeEditor({
   const providerRef = useRef<WebsocketProvider | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+
+  // Keep latest callback refs so Monaco/Yjs listeners never invoke stale closures
   const onRunRef = useRef(onRunShortcut);
   onRunRef.current = onRunShortcut;
   const onCursorRef = useRef(onCursorChange);
   onCursorRef.current = onCursorChange;
+  const onSyncRef = useRef(onSyncChange);
+  onSyncRef.current = onSyncChange;
+  const onPeerCountRef = useRef(onPeerCountChange);
+  onPeerCountRef.current = onPeerCountChange;
+  const onDocReadyRef = useRef(onDocReady);
+  onDocReadyRef.current = onDocReady;
+
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleEditorDidMount: OnMount = (editor, monaco) => {
-    bindingRef.current?.destroy();
-    providerRef.current?.destroy();
-    ydocRef.current?.destroy();
-    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+  const cleanupResources = () => {
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = null;
+    }
+    try {
+      bindingRef.current?.destroy();
+    } catch {
+      // Ignore if already disposed by Monaco model
+    }
+    bindingRef.current = null;
 
+    try {
+      providerRef.current?.destroy();
+    } catch {
+      // Ignore
+    }
+    providerRef.current = null;
+
+    try {
+      ydocRef.current?.destroy();
+    } catch {
+      // Ignore
+    }
+    ydocRef.current = null;
+  };
+
+  const handleEditorDidMount: OnMount = (editor, monaco) => {
+    cleanupResources();
     editorRef.current = editor;
 
     editor.onDidChangeCursorPosition((e) => {
@@ -125,29 +157,19 @@ export function CollaborativeEditor({
         provider.awareness as any
       );
       bindingRef.current = binding;
-
-      ytext.observe(() => {
-        const latest = ytext.toString();
-        if (model.getValue() !== latest) {
-          model.setValue(latest);
-        }
-      });
     }
 
     const controller: CollaborativeEditorHandle = {
       getCode: () => {
-        const currentModel = editorRef.current?.getModel();
-        if (currentModel) return currentModel.getValue();
-        return ydocRef.current?.getText('monaco').toString() || '';
+        const currentDoc = ydocRef.current;
+        if (currentDoc) {
+          const text = currentDoc.getText('monaco').toString();
+          if (text.length > 0) return text;
+        }
+        return editorRef.current?.getModel()?.getValue() || '';
       },
       setCode: (newCode: string) => {
-        const currentModel = editorRef.current?.getModel();
         const currentDoc = ydocRef.current;
-
-        if (currentModel && currentModel.getValue() !== newCode) {
-          currentModel.setValue(newCode);
-        }
-
         if (currentDoc) {
           const sharedText = currentDoc.getText('monaco');
           if (sharedText.toString() !== newCode) {
@@ -156,6 +178,12 @@ export function CollaborativeEditor({
               sharedText.insert(0, newCode);
             });
           }
+          return;
+        }
+
+        const currentModel = editorRef.current?.getModel();
+        if (currentModel && currentModel.getValue() !== newCode) {
+          currentModel.setValue(newCode);
         }
       },
       formatCode: () => {
@@ -164,7 +192,7 @@ export function CollaborativeEditor({
       getDoc: () => ydocRef.current,
     };
 
-    onDocReady?.(ydoc, controller);
+    onDocReadyRef.current?.(ydoc, controller);
 
     // 5. Broadcast our username & cursor color to other peers
     const username = user?.username || 'Anonymous';
@@ -177,23 +205,24 @@ export function CollaborativeEditor({
     // 6. Non-blocking connection sync handling with safety timeout
     if (provider.synced) {
       setIsConnecting(false);
-      onSyncChange?.(true);
+      onSyncRef.current?.(true);
     } else {
       setIsConnecting(true);
     }
 
     const handleSync = (isSynced: boolean) => {
       setIsConnecting(!isSynced);
-      onSyncChange?.(isSynced);
+      onSyncRef.current?.(isSynced);
       if (isSynced && syncTimeoutRef.current) {
         clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
       }
     };
 
     const handleStatus = ({ status }: { status: string }) => {
       if (status === 'connected' && provider.synced) {
         setIsConnecting(false);
-        onSyncChange?.(true);
+        onSyncRef.current?.(true);
       }
     };
 
@@ -203,6 +232,7 @@ export function CollaborativeEditor({
     // Safety timeout: never leave the user locked or displaying a sync spinner indefinitely
     syncTimeoutRef.current = setTimeout(() => {
       setIsConnecting(false);
+      onSyncRef.current?.(true);
     }, 1500);
 
     // 7. Track peer count changes (only notify parent when count actually changes)
@@ -211,7 +241,7 @@ export function CollaborativeEditor({
       const count = provider.awareness.getStates().size;
       if (count !== lastCount) {
         lastCount = count;
-        onPeerCountChange?.(count);
+        onPeerCountRef.current?.(count);
       }
     };
 
@@ -221,13 +251,7 @@ export function CollaborativeEditor({
 
   useEffect(() => {
     return () => {
-      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
-      bindingRef.current?.destroy();
-      bindingRef.current = null;
-      providerRef.current?.destroy();
-      providerRef.current = null;
-      ydocRef.current?.destroy();
-      ydocRef.current = null;
+      cleanupResources();
     };
   }, [roomId]);
 
