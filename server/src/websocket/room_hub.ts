@@ -7,6 +7,7 @@ import * as decoding from 'lib0/decoding';
 import { db } from '../db';
 import { desc, eq } from 'drizzle-orm';
 import type { WebSocket } from 'ws';
+import { clearTimeout } from 'node:timers';
 
 export const MESSAGE_SYNC = 0;
 export const MESSAGE_AWARENESS = 1;
@@ -16,6 +17,12 @@ interface RoomSession {
   awareness: awarenessProtocol.Awareness;
   conns: Map<WebSocket, Set<number>>;
   saveTimeout: NodeJS.Timeout | null;
+  evictionTimeout: NodeJS.Timeout | null;
+  heartBeatInterval: NodeJS.Timeout | null;
+}
+
+interface HeartbeatWebSocket extends WebSocket {
+  isAlive?: boolean;
 }
 
 class RoomHub {
@@ -63,6 +70,8 @@ class RoomHub {
       awareness,
       conns: new Map(),
       saveTimeout: null,
+      evictionTimeout: null,
+      heartBeatInterval: null
     };
 
     this.rooms.set(roomId, room);
@@ -159,6 +168,37 @@ class RoomHub {
     const controlledIds = new Set<number>();
     room.conns.set(conn, controlledIds);
 
+    // cancel pending eviction - a peer reconnected within grace window
+    if (room.evictionTimeout) {
+      clearTimeout(room.evictionTimeout);
+      room.evictionTimeout = null;
+    }
+
+    const hbConn = conn as HeartbeatWebSocket;
+    hbConn.isAlive = true;
+
+    conn.on("pong", () => {
+      hbConn.isAlive = true;
+    });
+
+    if (!room.heartBeatInterval) {
+      room.heartBeatInterval = setInterval(() => {
+
+        room.conns.forEach((_, c) => {
+          const socket = c as HeartbeatWebSocket;
+
+          if (socket.isAlive === false) {
+            // Did not respond to last ping -> hard terminate
+            socket.terminate();
+            return;
+          }
+          socket.isAlive = false;
+          socket.ping();
+        });
+
+      }, 30_000)
+    }
+
     // Attach permanent message listener before flushing early messages
     conn.on('message', (data: Buffer) => {
       this.processIncomingMessage(room, conn, data);
@@ -206,12 +246,29 @@ class RoomHub {
         );
       }
       if (room.conns.size === 0) {
+
+        // flush any pending debounce save events
         if (room.saveTimeout) {
           clearTimeout(room.saveTimeout);
           room.saveTimeout = null;
         }
+
         this.saveSnapshot(roomId, room);
-        this.rooms.delete(roomId);
+
+        if (room.heartBeatInterval) {
+          clearInterval(room.heartBeatInterval);
+          room.heartBeatInterval = null;
+        }
+
+        room.evictionTimeout = setTimeout(() => {
+
+          // double check if no one reconnected during this window
+          room.doc.destroy();
+          room.awareness.destroy();
+
+          this.rooms.delete(roomId);
+
+        }, 60_000);
       }
     });
   }
