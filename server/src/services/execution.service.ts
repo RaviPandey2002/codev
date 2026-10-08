@@ -21,6 +21,39 @@ interface SpawnOutcome {
   durationMs: number;
 }
 
+type ExecutionParams = {
+  language: ExecutionLanguage;
+  compilerProfile?: CompilerProfile;
+  code: string;
+  stdin?: string;
+  triggeredBy?: string;
+};
+
+const PISTON_FILE_NAMES: Record<ExecutionLanguage, string> = {
+  cpp: 'main.cpp',
+  c: 'main.c',
+  python: 'main.py',
+  javascript: 'main.js',
+  typescript: 'main.ts',
+};
+interface PistonExecutionResponse {
+  language: string;
+  version: string;
+  run: {
+    stdout: string;
+    stderr: string;
+    code: number | null;
+    signal: string | null;
+    output: string;
+  };
+  compile?: {
+    stdout: string;
+    stderr: string;
+    code: number | null;
+    output: string;
+  };
+}
+
 function getCompileArgs(
   language: 'cpp' | 'c',
   profile: CompilerProfile,
@@ -59,15 +92,15 @@ function getTsxBinary(): string {
   try {
     const fromMeta = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../node_modules/.bin/tsx');
     if (existsSync(fromMeta)) return fromMeta;
-  } catch {}
+  } catch { }
   try {
     const fromCwd = path.resolve(process.cwd(), 'node_modules/.bin/tsx');
     if (existsSync(fromCwd)) return fromCwd;
-  } catch {}
+  } catch { }
   try {
     const parentCwd = path.resolve(process.cwd(), '../node_modules/.bin/tsx');
     if (existsSync(parentCwd)) return parentCwd;
-  } catch {}
+  } catch { }
   return 'tsx';
 }
 
@@ -146,24 +179,12 @@ function runProcess(
   });
 }
 
-export async function executeCode(params: {
-  language: ExecutionLanguage;
-  compilerProfile?: CompilerProfile;
-  code: string;
-  stdin?: string;
-  triggeredBy?: string;
-}): Promise<ExecutionResult> {
-  const {
-    language,
-    compilerProfile = 'default',
-    code,
-    stdin = '',
-    triggeredBy,
-  } = params;
-
+const executeViaLocal = async (params: ExecutionParams): Promise<ExecutionResult> => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codev-run-'));
 
   try {
+    const { language, compilerProfile = 'default', code, stdin = '', triggeredBy } = params;
+
     // 1. Compiled Languages (C++ and C)
     if (language === 'cpp' || language === 'c') {
       const sourceFile = language === 'cpp' ? 'main.cpp' : 'main.c';
@@ -200,14 +221,15 @@ export async function executeCode(params: {
         EXECUTION_TIMEOUT_MS
       );
 
+      const timedOut = runRes.timedOut;
       return {
         stdout: runRes.stdout,
-        stderr: runRes.timedOut
+        stderr: timedOut
           ? `${runRes.stderr}\nExecution timed out after ${EXECUTION_TIMEOUT_MS}ms.`.trim()
           : runRes.stderr,
         exitCode: runRes.exitCode,
         executionTimeMs: runRes.durationMs,
-        status: runRes.timedOut
+        status: timedOut
           ? 'TIME_LIMIT_EXCEEDED'
           : runRes.exitCode === 0
             ? 'SUCCESS'
@@ -246,14 +268,15 @@ export async function executeCode(params: {
       EXECUTION_TIMEOUT_MS
     );
 
+    const timedOut = runRes.timedOut;
     return {
       stdout: runRes.stdout,
-      stderr: runRes.timedOut
+      stderr: timedOut
         ? `${runRes.stderr}\nExecution timed out after ${EXECUTION_TIMEOUT_MS}ms.`.trim()
         : runRes.stderr,
       exitCode: runRes.exitCode,
       executionTimeMs: runRes.durationMs,
-      status: runRes.timedOut
+      status: timedOut
         ? 'TIME_LIMIT_EXCEEDED'
         : runRes.exitCode === 0
           ? 'SUCCESS'
@@ -263,5 +286,117 @@ export async function executeCode(params: {
     };
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+};
+
+// -------------Piston-Code----------------
+
+const PISTON_LANGUAGE_MAP: Record<ExecutionLanguage, { language: string; version: string }> = {
+  cpp: { language: 'c++', version: '*' },
+  c: { language: 'c', version: '*' },
+  python: { language: 'python', version: '*' },
+  javascript: { language: 'javascript', version: '*' },
+  typescript: { language: 'typescript', version: '*' },
+};
+
+async function executeViaPiston(params: ExecutionParams): Promise<ExecutionResult> {
+  const { language, code, stdin = '', triggeredBy } = params;
+
+  const mapping = PISTON_LANGUAGE_MAP[language];
+  if (!mapping) {
+    throw new Error(`Unsupported language for Piston: ${language}`);
+  }
+
+  const controller = new AbortController();
+  // 8 sec network guard
+  const timeoutId = setTimeout(() => controller.abort(), EXECUTION_TIMEOUT_MS + 3000);
+  const startTime = performance.now();
+
+  try {
+    const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language: mapping.language,
+        version: mapping.version,
+        files: [
+          {
+            name: PISTON_FILE_NAMES[language],
+            content: code,
+          },
+        ],
+        stdin,
+        run_timeout: EXECUTION_TIMEOUT_MS,
+        compile_timeout: EXECUTION_TIMEOUT_MS,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Piston API returned HTTP ${response.status}`);
+    }
+
+    const data = (await response.json()) as PistonExecutionResponse;
+    const durationMs = Math.round(performance.now() - startTime);
+
+    // 1. Check for compilation errors (C / C++)
+    if (data.compile && data.compile.code !== 0) {
+      return {
+        stdout: data.compile.stdout || '',
+        stderr: data.compile.stderr || data.compile.output || 'Compilation failed.',
+        exitCode: data.compile.code,
+        executionTimeMs: durationMs,
+        status: 'COMPILE_ERROR',
+        triggeredBy,
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    // 2. Check for timeouts (SIGKILL signal or duration)
+    const timedOut = data.run.signal === 'SIGKILL' || durationMs >= EXECUTION_TIMEOUT_MS;
+
+    return {
+      stdout: data.run.stdout || '',
+      stderr: timedOut
+        ? `${data.run.stderr || ''}\nExecution timed out after ${EXECUTION_TIMEOUT_MS}ms.`.trim()
+        : data.run.stderr || '',
+      exitCode: data.run.code,
+      executionTimeMs: durationMs,
+      status: timedOut
+        ? 'TIME_LIMIT_EXCEEDED'
+        : data.run.code === 0
+          ? 'SUCCESS'
+          : 'RUNTIME_ERROR',
+      triggeredBy,
+      timestamp: new Date().toISOString(),
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function executeCode(params: ExecutionParams): Promise<ExecutionResult> {
+  const driver = process.env.EXECUTION_DRIVER || 'piston';
+
+  if (driver === 'local') {
+    return await executeViaLocal(params);
+  }
+
+  // Production / default driver: Piston
+  // We strictly DO NOT fall back to local execution on Piston failure
+  // to protect the host server from untrusted code / fork bombs.
+  try {
+    return await executeViaPiston(params);
+  } catch (error: any) {
+    console.error('Piston execution error:', error);
+    return {
+      stdout: '',
+      stderr: `Execution service error: ${error?.message || 'Remote sandbox unavailable.'}`,
+      exitCode: 1,
+      executionTimeMs: 0,
+      status: 'RUNTIME_ERROR',
+      triggeredBy: params.triggeredBy,
+      timestamp: new Date().toISOString(),
+    };
   }
 }
