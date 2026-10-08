@@ -263,6 +263,8 @@ class RoomHub {
         room.evictionTimeout = setTimeout(() => {
 
           // double check if no one reconnected during this window
+          if(room.conns.size > 0) return;
+
           room.doc.destroy();
           room.awareness.destroy();
 
