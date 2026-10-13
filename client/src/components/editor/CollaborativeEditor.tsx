@@ -238,7 +238,11 @@ export function CollaborativeEditor({
     // 7. Track peer count changes (only notify parent when count actually changes)
     let lastCount = -1;
     const updatePeerCount = () => {
-      const count = provider.awareness.getStates().size;
+      // Filter out headless relays or uninitialized awareness states without user info
+      const activePeers = Array.from(provider.awareness.getStates().values()).filter(
+        (state: any) => Boolean(state?.user?.name)
+      );
+      const count = Math.max(1, activePeers.length);
       if (count !== lastCount) {
         lastCount = count;
         onPeerCountRef.current?.(count);

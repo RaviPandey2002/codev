@@ -46,6 +46,8 @@ class RoomHub {
   private async initRoomSession(roomId: string): Promise<RoomSession> {
     const doc = new Y.Doc();
     const awareness = new awarenessProtocol.Awareness(doc);
+    // Headless server broker: clear local state so server never registers as an editing peer
+    awareness.setLocalState(null);
 
     const latestSnapshot = await db.query.yjsSnapshots.findFirst({
       where: eq(yjsSnapshots.roomId, roomId),
