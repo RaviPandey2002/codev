@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import 'dotenv/config'
 import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
+import helmet from '@fastify/helmet'
 import authRoutes from './routes/auth.routes.js';
 import roomRoutes from './routes/rooms.routes.js';
 import executionRoutes from './routes/execution.routes.js';
@@ -13,6 +14,14 @@ import wsRoutes from './routes/ws.routes.js';
 
 const app = Fastify({
   logger: process.env.NODE_ENV === 'production',
+});
+
+// Production security headers
+app.register(helmet, {
+  // Disable HTML CSP on pure JSON/WebSocket API to save header payload
+  contentSecurityPolicy: false,
+  // Allow cross-origin requests from our separate Vite frontend
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
 });
 
 app.register(cors, {
