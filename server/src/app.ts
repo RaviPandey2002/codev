@@ -14,6 +14,7 @@ import wsRoutes from './routes/ws.routes.js';
 
 const app = Fastify({
   logger: process.env.NODE_ENV === 'production',
+  trustProxy: true,
 });
 
 // Production security headers

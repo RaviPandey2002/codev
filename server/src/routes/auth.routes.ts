@@ -4,6 +4,7 @@ import { validateBody } from '../utils/validate'
 import * as authService from '../services/auth.service'
 import { AppError } from '../utils/errors';
 import { auth } from '../hooks/authenticate';
+import { rateLimit } from '../services/rate_limiter.js';
 
 function setAuthCookies(
   reply: FastifyReply,
@@ -34,7 +35,12 @@ function clearAuthCookies(reply: FastifyReply) {
 export default async function authRoutes(app: FastifyInstance) {
   app.post(
     '/register',
-    { preHandler: validateBody(registerSchema) },
+    {
+      preHandler: [
+        rateLimit({ max: 10, windowSec: 60, keyPrefix: 'auth-register' }),
+        validateBody(registerSchema),
+      ],
+    },
     async (req, reply) => {
       const { username, email, password } = req.body as RegisterInput;
 
@@ -59,7 +65,12 @@ export default async function authRoutes(app: FastifyInstance) {
 
   app.post(
     '/login',
-    { preHandler: validateBody(loginSchema) },
+    {
+      preHandler: [
+        rateLimit({ max: 10, windowSec: 60, keyPrefix: 'auth-login' }),
+        validateBody(loginSchema),
+      ],
+    },
     async (req, reply) => {
       const { email, password } = req.body as LoginInput;
 

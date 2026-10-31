@@ -3,13 +3,24 @@ import { executeCodeSchema, ExecuteCodeInput } from '@codev/shared';
 import { validateBody } from '../utils/validate.js';
 import { auth } from '../hooks/authenticate.js';
 import { executeCode } from '../services/execution.service.js';
+import { rateLimit } from '../services/rate_limiter.js';
 
 export default async function executionRoutes(app: FastifyInstance) {
   app.addHook('preHandler', auth);
 
   app.post(
     '/',
-    { preHandler: [validateBody(executeCodeSchema)] },
+    {
+      preHandler: [
+        rateLimit({
+          max: 15,
+          windowSec: 60,
+          keyPrefix: 'code-exec',
+          keyGenerator: (req) => (req as any).user?.id || req.ip,
+        }),
+        validateBody(executeCodeSchema),
+      ],
+    },
     async (req, reply) => {
       const { language, compilerProfile, code, stdin } =
         req.body as ExecuteCodeInput;
