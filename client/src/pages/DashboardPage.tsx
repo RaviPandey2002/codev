@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
   Code2,
@@ -13,8 +13,6 @@ import {
   Search,
   LayoutGrid,
   List,
-  Server,
-  Database,
   Copy,
   Check,
   Code,
@@ -47,6 +45,18 @@ function formatRelativeTime(dateString: string): string {
   }
 }
 
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  SCRATCHPAD: 'Editor',
+  COMPILER: 'CP Arena',
+  TEMPLATE: 'Template',
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  OWNER: 'Owner',
+  EDITOR: 'Editor',
+  VIEWER: 'Viewer',
+};
+
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
@@ -70,6 +80,7 @@ export default function DashboardPage() {
 
   // New Workspace Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const modalFirstInputRef = useRef<HTMLInputElement>(null);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
   const [newRoomSourceType, setNewRoomSourceType] = useState<RoomSourceType>('SCRATCHPAD');
@@ -95,6 +106,18 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchWorkspaces();
   }, []);
+
+  // Escape to close modal + auto-focus first input on open
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsModalOpen(false);
+    };
+    document.addEventListener('keydown', handleEsc);
+    // Auto-focus workspace name input when modal opens
+    setTimeout(() => modalFirstInputRef.current?.focus(), 50);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [isModalOpen]);
 
   const handleLogout = async () => {
     await logout();
@@ -183,9 +206,11 @@ export default function DashboardPage() {
   const sharedCount = workspaces.filter((w) => w.role !== 'OWNER').length;
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground relative overflow-hidden font-sans selection:bg-primary/20 selection:text-primary">
+    <div className="min-h-screen flex flex-col bg-background text-foreground relative overflow-hidden font-sans selection:bg-primary/20 selection:text-primary animate-in fade-in-0 duration-200">
       {/* Background Grid Pattern */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
+      {/* Ambient glow — consistent with landing page */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[280px] bg-primary/8 rounded-full blur-[100px] pointer-events-none" />
 
       {/* Top Header */}
       <header className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between z-10 border-b border-border/40">
@@ -202,14 +227,8 @@ export default function DashboardPage() {
         </Link>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Telemetry Indicator */}
-          <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-muted/40 border border-border/60 text-xs font-mono text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Fastify API: Live</span>
-          </div>
-
           {/* User Profile Pill */}
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted/40 border border-border/60 text-xs font-mono">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted/40 border border-border/60 text-xs font-mono">
             <div className="h-5 w-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold uppercase shrink-0">
               {user?.username?.[0] || 'U'}
             </div>
@@ -224,7 +243,7 @@ export default function DashboardPage() {
             variant="ghost"
             size="sm"
             onClick={handleLogout}
-            className="text-muted-foreground hover:text-destructive gap-1 text-xs px-2 sm:px-3"
+            className="text-muted-foreground hover:text-destructive gap-1 text-xs px-2 sm:px-3 cursor-pointer"
           >
             <LogOut size={14} />
             <span className="hidden sm:inline">Sign out</span>
@@ -234,44 +253,25 @@ export default function DashboardPage() {
 
       {/* Main Content */}
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 z-10 space-y-6 sm:space-y-8">
-        {/* Row 1: System Telemetry Deck */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-          <div className="p-3 sm:p-3.5 rounded-xl border border-border/60 bg-card/50 backdrop-blur-xs space-y-1">
-            <div className="flex items-center justify-between text-xs text-muted-foreground font-mono">
-              <span>Database</span>
-              <Database size={13} className="text-emerald-500" />
-            </div>
-            <div className="text-sm sm:text-base font-bold font-mono text-foreground truncate">PostgreSQL 16</div>
-            <div className="text-[10px] sm:text-[11px] text-muted-foreground truncate">Master Schema Contract</div>
+        {/* User Welcome & Action Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/40">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+              Welcome back, {user?.username || 'Developer'} 👋
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+              Jump into your active workspaces or spin up a new collaborative room.
+            </p>
           </div>
-
-          <div className="p-3 sm:p-3.5 rounded-xl border border-border/60 bg-card/50 backdrop-blur-xs space-y-1">
-            <div className="flex items-center justify-between text-xs text-muted-foreground font-mono">
-              <span>CRDT State</span>
-              <Server size={13} className="text-primary" />
-            </div>
-            <div className="text-sm sm:text-base font-bold font-mono text-foreground truncate">Yjs v13</div>
-            <div className="text-[10px] sm:text-[11px] text-muted-foreground truncate">Uint8Array binary delta</div>
-          </div>
-
-          <div className="p-3 sm:p-3.5 rounded-xl border border-border/60 bg-card/50 backdrop-blur-xs space-y-1">
-            <div className="flex items-center justify-between text-xs text-muted-foreground font-mono">
-              <span>Execution</span>
-              <Terminal size={13} className="text-primary" />
-            </div>
-            <div className="text-sm sm:text-base font-bold font-mono text-foreground truncate">gcc / g++ / py</div>
-            <div className="text-[10px] sm:text-[11px] text-muted-foreground truncate">Sandboxed CP Runner</div>
-          </div>
-
-          <div className="p-3 sm:p-3.5 rounded-xl border border-border/60 bg-card/50 backdrop-blur-xs space-y-1">
-            <div className="flex items-center justify-between text-xs text-muted-foreground font-mono">
-              <span>Workspaces</span>
-              <FolderGit2 size={13} className="text-primary" />
-            </div>
-            <div className="text-sm sm:text-base font-bold font-mono text-foreground truncate">
-              {isLoadingRooms ? '...' : workspaces.length}
-            </div>
-            <div className="text-[10px] sm:text-[11px] text-muted-foreground truncate">Across all active rooms</div>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <Button
+              size="sm"
+              onClick={() => setIsModalOpen(true)}
+              className="gap-1.5 text-xs font-semibold shadow-xs cursor-pointer"
+            >
+              <Plus size={14} />
+              <span>Create Workspace</span>
+            </Button>
           </div>
         </div>
 
@@ -291,7 +291,7 @@ export default function DashboardPage() {
               type="button"
               disabled={launchingTemplate !== null}
               onClick={() => handleLaunchTemplate('typescript', 'TypeScript Scratchpad', 'SCRATCHPAD')}
-              className="p-3.5 sm:p-4 rounded-xl border border-border/70 bg-card/40 hover:border-primary/50 hover:bg-card/70 transition-all text-left space-y-1 group cursor-pointer disabled:opacity-60"
+              className="p-3.5 sm:p-4 rounded-xl border border-border/70 bg-card/40 hover:border-primary/50 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-sm transition-all duration-150 text-left space-y-1 group cursor-pointer disabled:opacity-60"
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
@@ -313,7 +313,7 @@ export default function DashboardPage() {
               type="button"
               disabled={launchingTemplate !== null}
               onClick={() => handleLaunchTemplate('cpp', 'C++ Competitive Arena', 'COMPILER')}
-              className="p-3.5 sm:p-4 rounded-xl border border-primary/40 bg-primary/5 hover:border-primary hover:bg-primary/10 transition-all text-left space-y-1 group cursor-pointer disabled:opacity-60"
+              className="p-3.5 sm:p-4 rounded-xl border border-primary/40 bg-primary/5 hover:border-primary hover:bg-primary/10 hover:-translate-y-0.5 hover:shadow-sm transition-all duration-150 text-left space-y-1 group cursor-pointer disabled:opacity-60"
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5">
@@ -338,7 +338,7 @@ export default function DashboardPage() {
               type="button"
               disabled={launchingTemplate !== null}
               onClick={() => handleLaunchTemplate('python', 'Python Workspace', 'SCRATCHPAD')}
-              className="p-3.5 sm:p-4 rounded-xl border border-border/70 bg-card/40 hover:border-primary/50 hover:bg-card/70 transition-all text-left space-y-1 group cursor-pointer disabled:opacity-60"
+              className="p-3.5 sm:p-4 rounded-xl border border-border/70 bg-card/40 hover:border-primary/50 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-sm transition-all duration-150 text-left space-y-1 group cursor-pointer disabled:opacity-60"
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
@@ -360,7 +360,7 @@ export default function DashboardPage() {
               type="button"
               disabled={launchingTemplate !== null}
               onClick={() => handleLaunchTemplate('react', 'React Sandbox', 'TEMPLATE')}
-              className="p-3.5 sm:p-4 rounded-xl border border-border/70 bg-card/40 hover:border-primary/50 hover:bg-card/70 transition-all text-left space-y-1 group cursor-pointer disabled:opacity-60"
+              className="p-3.5 sm:p-4 rounded-xl border border-border/70 bg-card/40 hover:border-primary/50 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-sm transition-all duration-150 text-left space-y-1 group cursor-pointer disabled:opacity-60"
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
@@ -547,9 +547,10 @@ export default function DashboardPage() {
           ) : viewMode === 'GRID' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
               {filteredWorkspaces.map((ws) => (
-                <div
+                <Link
                   key={ws.id}
-                  className="rounded-xl border border-border/70 bg-card/60 backdrop-blur-xs p-4 sm:p-5 space-y-3.5 sm:space-y-4 hover:border-primary/40 transition-all group"
+                  to={`/rooms/${ws.id}`}
+                  className="rounded-xl border border-border/70 bg-card/60 backdrop-blur-xs p-4 sm:p-5 space-y-3.5 sm:space-y-4 hover:border-primary/40 hover:-translate-y-0.5 hover:shadow-md transition-all duration-150 group cursor-pointer block"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-1 min-w-0">
@@ -560,10 +561,10 @@ export default function DashboardPage() {
                         </h3>
                       </div>
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-mono">
-                        <span className="truncate">{ws.id}</span>
+                        <span className="truncate">{ws.id.slice(0, 8)}…</span>
                         <button
                           type="button"
-                          onClick={() => copyRoomId(ws.id)}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); copyRoomId(ws.id); }}
                           className="hover:text-foreground cursor-pointer transition-colors shrink-0"
                           title="Copy room code"
                         >
@@ -583,7 +584,7 @@ export default function DashboardPage() {
                             : 'bg-muted text-muted-foreground border-border/60'
                         }`}
                       >
-                        {ws.role}
+                        {ROLE_LABELS[ws.role] ?? ws.role}
                       </span>
                     </div>
                   </div>
@@ -596,8 +597,8 @@ export default function DashboardPage() {
 
                   <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t border-border/40 font-mono">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] uppercase font-bold text-muted-foreground/80 px-1.5 py-0.5 bg-muted rounded">
-                        {ws.sourceType}
+                      <span className="text-[10px] font-medium text-muted-foreground/80 px-1.5 py-0.5 bg-muted rounded">
+                        {SOURCE_TYPE_LABELS[ws.sourceType] ?? ws.sourceType}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -606,13 +607,11 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  <Button asChild size="sm" variant="outline" className="w-full justify-between text-xs font-mono">
-                    <Link to={`/rooms/${ws.id}`}>
-                      <span>Enter Workspace</span>
-                      <ArrowRight size={14} />
-                    </Link>
-                  </Button>
-                </div>
+                  <div className="flex items-center justify-between text-xs font-mono text-primary group-hover:text-primary transition-colors pt-0.5">
+                    <span>Open workspace</span>
+                    <ArrowRight size={13} />
+                  </div>
+                </Link>
               ))}
             </div>
           ) : (
@@ -640,7 +639,7 @@ export default function DashboardPage() {
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">
                         <div className="flex items-center gap-1.5">
-                          <span>{ws.id}</span>
+                          <span>{ws.id.slice(0, 8)}…</span>
                           <button
                             type="button"
                             onClick={() => copyRoomId(ws.id)}
@@ -655,7 +654,7 @@ export default function DashboardPage() {
                         </div>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground uppercase text-[10px]">
-                        {ws.sourceType}
+                        {SOURCE_TYPE_LABELS[ws.sourceType] ?? ws.sourceType}
                       </td>
                       <td className="py-3 px-4">
                         <span
@@ -665,7 +664,7 @@ export default function DashboardPage() {
                               : 'bg-muted text-muted-foreground border-border/60'
                           }`}
                         >
-                          {ws.role}
+                          {ROLE_LABELS[ws.role] ?? ws.role}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">
@@ -673,7 +672,7 @@ export default function DashboardPage() {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <Button asChild size="sm" variant="ghost" className="h-7 text-xs px-2">
-                          <Link to={`/rooms/${ws.id}`}>Open</Link>
+                          <Link to={`/rooms/${ws.id}`}>Open →</Link>
                         </Button>
                       </td>
                     </tr>
@@ -687,14 +686,15 @@ export default function DashboardPage() {
 
       {/* New Workspace Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in-0">
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-card border border-border/80 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in-0 duration-150">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-card border border-border/80 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 relative animate-in zoom-in-95 fade-in-0 duration-200">
             <button
               type="button"
               onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground cursor-pointer"
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground cursor-pointer p-1 rounded-md hover:bg-muted transition-colors"
+              aria-label="Close modal"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
 
             <div className="space-y-1">
@@ -714,6 +714,7 @@ export default function DashboardPage() {
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-foreground">Workspace Name</label>
                 <Input
+                  ref={modalFirstInputRef}
                   type="text"
                   placeholder="e.g. LeetCode Practice, Fastify Service"
                   value={newRoomName}

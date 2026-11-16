@@ -373,6 +373,7 @@ async function executeViaPiston(params: ExecutionParams): Promise<ExecutionResul
   const timeoutId = setTimeout(() => controller.abort(), EXECUTION_TIMEOUT_MS + 3000);
   const startTime = performance.now();
 
+  // Fallback to official Piston endpoint (requires whitelist) or custom self-hosted instance
   const pistonUrl = process.env.PISTON_API_URL || 'https://emkc.org/api/v2/piston/execute';
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (process.env.PISTON_API_KEY) {
@@ -443,15 +444,16 @@ async function executeViaPiston(params: ExecutionParams): Promise<ExecutionResul
 }
 
 export async function executeCode(params: ExecutionParams): Promise<ExecutionResult> {
-  const driver = process.env.EXECUTION_DRIVER || 'piston';
+  // Default to local bare-metal execution with Linux kernel guards (prlimit, process-group kill, 64KB cap).
+  // Can be set to 'piston' via EXECUTION_DRIVER=piston if a private/whitelisted Piston instance is available.
+  // OR if we spin up our own Docker based isolated env. for code execution.
+  const driver = process.env.EXECUTION_DRIVER || 'local';
 
   if (driver === 'local') {
     return await executeViaLocal(params);
   }
 
-  // Production / default driver: Piston
-  // We strictly DO NOT fall back to local execution on Piston failure
-  // to protect the host server from untrusted code / fork bombs.
+  // Remote Piston execution (strictly used when EXECUTION_DRIVER=piston is explicitly configured)
   try {
     return await executeViaPiston(params);
   } catch (error: any) {

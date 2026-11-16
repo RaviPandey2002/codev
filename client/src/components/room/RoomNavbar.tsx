@@ -109,7 +109,11 @@ export function RoomNavbar({
           size="sm"
           onClick={onRunCode}
           disabled={isRunning}
-          className="h-7 px-3.5 text-xs font-mono font-semibold gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md shadow-xs cursor-pointer"
+          className={`h-7 px-3.5 text-xs font-mono font-semibold gap-1.5 rounded-md shadow-xs transition-all cursor-pointer ${
+            isRunning
+              ? 'bg-amber-500/20 text-amber-500 border border-amber-500/40 animate-pulse'
+              : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+          }`}
           title="Run Code (Ctrl/Cmd + Enter)"
         >
           {isRunning ? (

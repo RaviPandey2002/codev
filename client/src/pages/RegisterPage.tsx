@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { registerSchema, type RegisterInput } from '@codev/shared';
 import { Link, useNavigate, Navigate } from 'react-router';
-import { Eye, EyeOff, Loader2, Code2, Mail, Lock, User as UserIcon, Sparkles, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Code2, Mail, Lock, User as UserIcon, ArrowRight, ArrowLeft } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -50,7 +50,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-between bg-background text-foreground relative overflow-hidden font-sans selection:bg-primary/20 selection:text-primary">
+    <div className="min-h-screen flex flex-col justify-between bg-background text-foreground relative overflow-hidden font-sans selection:bg-primary/20 selection:text-primary animate-in fade-in-0 duration-200">
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -80,12 +80,8 @@ export default function RegisterPage() {
       </header>
 
       <main className="w-full max-w-md mx-auto px-4 sm:px-6 py-6 sm:py-8 my-auto z-10">
-        <div className="bg-card/75 backdrop-blur-xl border border-border/60 shadow-2xl shadow-black/10 dark:shadow-black/40 rounded-2xl p-5 sm:p-8 space-y-5 sm:space-y-6">
-          <div className="space-y-2 text-left">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-              <Sparkles size={12} />
-              <span>Join the Workspace</span>
-            </div>
+        <div className="bg-card/75 backdrop-blur-xl border border-border/60 shadow-2xl shadow-black/10 dark:shadow-black/40 rounded-2xl p-5 sm:p-8 space-y-5 sm:space-y-6 animate-in zoom-in-95 fade-in-0 duration-200">
+          <div className="space-y-1.5 text-left">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Create account</h1>
             <p className="text-xs sm:text-sm text-muted-foreground">
               Start collaborating on code in real-time.
@@ -160,7 +156,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                   tabIndex={-1}
                 >
                   {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}

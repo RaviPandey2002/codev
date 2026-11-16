@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Code2, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
@@ -125,11 +125,24 @@ export default function RoomPage() {
 
   if (isLoading) {
     return (
-      <div className="h-screen h-[100dvh] flex flex-col items-center justify-center bg-background text-foreground space-y-4 p-4">
-        <Loader2 size={32} className="animate-spin text-primary" />
+      <div className="h-screen h-[100dvh] flex flex-col items-center justify-center bg-background text-foreground space-y-4 p-4 animate-in fade-in-0 duration-200">
+        <div className="relative">
+          <div className="h-12 w-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+            <Code2 size={22} />
+          </div>
+          <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-background border-2 border-background flex items-center justify-center">
+            <Loader2 size={10} className="animate-spin text-primary" />
+          </span>
+        </div>
         <div className="text-center space-y-1">
-          <p className="text-sm font-semibold">Connecting to Workspace...</p>
-          <p className="text-xs text-muted-foreground font-mono">Room code: {roomId}</p>
+          <p className="text-sm font-semibold">Connecting to Workspace…</p>
+          <p className="text-xs text-muted-foreground font-mono">#{roomId}</p>
+        </div>
+        {/* Layout skeleton hint */}
+        <div className="absolute inset-x-0 bottom-0 h-[calc(100vh-160px)] flex gap-0.5 p-0.5 opacity-[0.04] pointer-events-none">
+          <div className="w-1/4 bg-foreground rounded-tl-xl" />
+          <div className="flex-1 bg-foreground" />
+          <div className="w-1/4 bg-foreground rounded-tr-xl" />
         </div>
       </div>
     );
