@@ -104,27 +104,85 @@ function getTsxBinary(): string {
   return 'tsx';
 }
 
+let hasPrlimitChecked = false;
+let hasPrlimit = false;
+
+function isPrlimitAvailable(): boolean {
+  if (!hasPrlimitChecked) {
+    hasPrlimitChecked = true;
+    try {
+      hasPrlimit = process.platform === 'linux' && existsSync('/usr/bin/prlimit');
+    } catch {
+      hasPrlimit = false;
+    }
+  }
+  return hasPrlimit;
+}
+
 function runProcess(
   command: string,
   args: string[],
   cwd: string,
   stdinInput: string,
-  timeoutMs: number
+  timeoutMs: number,
+  options?: { sandboxed?: boolean; applyMemoryCap?: boolean }
 ): Promise<SpawnOutcome> {
   return new Promise((resolve) => {
     const startTime = performance.now();
-    const child = spawn(command, args, {
+
+    // Kernel sandboxing via prlimit on Linux:
+    // Only wrap when explicitly requested (for running user code, never for g++ compiler tooling)
+    let actualCommand = command;
+    let actualArgs = args;
+
+    if (options?.sandboxed && isPrlimitAvailable()) {
+      const prlimitArgs: string[] = ['--fsize=5242880']; // 5MB max output file
+      if (options.applyMemoryCap) {
+        prlimitArgs.push('--as=268435456'); // 256MB virtual memory cap
+      }
+      // Only enforce nproc if running under a dedicated sandbox UID,
+      // because Linux RLIMIT_NPROC is per-UID across the entire OS.
+      if (process.env.SANDBOX_UID) {
+        prlimitArgs.push('--nproc=30');
+      }
+      actualArgs = [...prlimitArgs, command, ...args];
+      actualCommand = '/usr/bin/prlimit';
+    }
+
+    const spawnOptions: any = {
       cwd,
       env: { PATH: process.env.PATH },
-    });
+      detached: process.platform !== 'win32',
+    };
+
+    if (process.env.SANDBOX_UID) {
+      spawnOptions.uid = parseInt(process.env.SANDBOX_UID, 10);
+    }
+    if (process.env.SANDBOX_GID) {
+      spawnOptions.gid = parseInt(process.env.SANDBOX_GID, 10);
+    }
+
+    const child = spawn(actualCommand, actualArgs, spawnOptions);
 
     let stdout = '';
     let stderr = '';
     let timedOut = false;
 
+    const killChild = () => {
+      try {
+        if (child.pid && process.platform !== 'win32') {
+          process.kill(-child.pid, 'SIGKILL');
+        } else {
+          child.kill('SIGKILL');
+        }
+      } catch {
+        child.kill('SIGKILL');
+      }
+    };
+
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGKILL');
+      killChild();
     }, timeoutMs);
 
     child.stdout.on('data', (chunk: Buffer) => {
@@ -132,7 +190,7 @@ function runProcess(
         stdout += chunk.toString('utf-8');
         if (stdout.length >= MAX_OUTPUT_BYTES) {
           stdout = stdout.slice(0, MAX_OUTPUT_BYTES) + '\n[Output truncated at 64KB]';
-          child.kill('SIGKILL');
+          killChild();
         }
       }
     });
@@ -142,6 +200,7 @@ function runProcess(
         stderr += chunk.toString('utf-8');
         if (stderr.length >= MAX_OUTPUT_BYTES) {
           stderr = stderr.slice(0, MAX_OUTPUT_BYTES) + '\n[Error output truncated at 64KB]';
+          killChild();
         }
       }
     });
@@ -218,7 +277,8 @@ const executeViaLocal = async (params: ExecutionParams): Promise<ExecutionResult
         [],
         tempDir,
         stdin,
-        EXECUTION_TIMEOUT_MS
+        EXECUTION_TIMEOUT_MS,
+        { sandboxed: true, applyMemoryCap: true }
       );
 
       const timedOut = runRes.timedOut;
@@ -251,7 +311,7 @@ const executeViaLocal = async (params: ExecutionParams): Promise<ExecutionResult
     } else if (language === 'javascript') {
       sourceFile = 'main.js';
       command = 'node';
-      args = [sourceFile];
+      args = ['--max-old-space-size=128', sourceFile];
     } else if (language === 'typescript') {
       sourceFile = 'main.ts';
       command = getTsxBinary();
@@ -265,7 +325,8 @@ const executeViaLocal = async (params: ExecutionParams): Promise<ExecutionResult
       args,
       tempDir,
       stdin,
-      EXECUTION_TIMEOUT_MS
+      EXECUTION_TIMEOUT_MS,
+      { sandboxed: true, applyMemoryCap: language === 'python' }
     );
 
     const timedOut = runRes.timedOut;
@@ -312,10 +373,16 @@ async function executeViaPiston(params: ExecutionParams): Promise<ExecutionResul
   const timeoutId = setTimeout(() => controller.abort(), EXECUTION_TIMEOUT_MS + 3000);
   const startTime = performance.now();
 
+  const pistonUrl = process.env.PISTON_API_URL || 'https://emkc.org/api/v2/piston/execute';
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (process.env.PISTON_API_KEY) {
+    headers['Authorization'] = process.env.PISTON_API_KEY;
+  }
+
   try {
-    const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+    const response = await fetch(pistonUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         language: mapping.language,
         version: mapping.version,
