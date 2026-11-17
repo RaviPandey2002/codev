@@ -25,8 +25,17 @@ app.register(helmet, {
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 });
 
+const getCorsOrigins = () => {
+  const clientUrl = process.env.CLIENT_URL;
+  if (!clientUrl) return 'http://localhost:5173';
+  if (clientUrl.includes(',')) {
+    return clientUrl.split(',').map((s) => s.trim());
+  }
+  return clientUrl;
+};
+
 app.register(cors, {
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: getCorsOrigins(),
   credentials: true
 });
 

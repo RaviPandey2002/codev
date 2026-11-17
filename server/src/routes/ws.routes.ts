@@ -40,11 +40,17 @@ export default async function wsRoutes(app: FastifyInstance) {
     { websocket: true },
     async (socket: WebSocket, req: FastifyRequest<{ Params: WsParams; Querystring: WsQuery }>) => {
       // Validate Origin header if present (CSWSH Defense)
-      const allowedOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
+      const allowedOrigin = process.env.CLIENT_URL;
       const origin = req.headers.origin;
-      if (origin && origin !== allowedOrigin && !allowedOrigin.split(',').map((s) => s.trim()).includes(origin)) {
-        socket.close(4403, 'Forbidden origin');
-        return;
+      if (allowedOrigin && origin) {
+        const allowedList = allowedOrigin.split(',').map((s) => s.trim().toLowerCase());
+        const normOrigin = origin.trim().toLowerCase();
+        const isMatch = allowedList.includes('*') || allowedList.includes(normOrigin);
+        if (!isMatch) {
+          console.warn(`[WS CSWSH] Blocked connection from unauthorized origin: ${origin}. Allowed: ${allowedOrigin}`);
+          socket.close(4403, 'Forbidden origin');
+          return;
+        }
       }
 
       // Buffer any incoming frames that arrive while async auth/DB checks are running

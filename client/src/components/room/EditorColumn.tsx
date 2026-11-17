@@ -229,6 +229,7 @@ export function EditorColumn({
       {/* Collaborative Monaco Canvas */}
       <div className="flex-1 min-h-0 w-full relative overflow-hidden bg-background">
         <CollaborativeEditor
+          key={roomId}
           roomId={roomId}
           language={language}
           readOnly={isEffectiveReadOnly}

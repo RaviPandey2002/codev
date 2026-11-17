@@ -47,11 +47,29 @@ export function useRoomWorkspace({
 
   const stdinSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notesSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runningWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    const handleBeforeUnload = () => {
+      const doc = ydocRef.current;
+      if (doc) {
+        const meta = doc.getMap<any>('workspaceMeta');
+        if (meta.get('isRunning')) {
+          doc.transact(() => {
+            meta.set('isRunning', false);
+            meta.set('runningBy', null);
+            meta.delete('runStartedAt');
+          });
+        }
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
       if (stdinSyncTimerRef.current) clearTimeout(stdinSyncTimerRef.current);
       if (notesSyncTimerRef.current) clearTimeout(notesSyncTimerRef.current);
+      if (runningWatchdogRef.current) clearTimeout(runningWatchdogRef.current);
     };
   }, []);
 
@@ -88,11 +106,44 @@ export function useRoomWorkspace({
         setProblemNotes(syncedNotes);
       }
 
-      const syncedRunning = meta.get('isRunning') as boolean | undefined;
-      setIsRunning(Boolean(syncedRunning));
-
+      const syncedRunning = Boolean(meta.get('isRunning'));
       const syncedRunningBy = meta.get('runningBy') as string | null | undefined;
-      setRunningBy(syncedRunningBy || null);
+      const runStartedAt = meta.get('runStartedAt') as number | undefined;
+      const isExpired = runStartedAt ? Date.now() - runStartedAt > 12_000 : false;
+
+      if (syncedRunning && (isExpired || !runStartedAt)) {
+        // Run has timed out or has no timestamp (stale state) -> auto-heal
+        doc.transact(() => {
+          meta.set('isRunning', false);
+          meta.set('runningBy', null);
+          meta.delete('runStartedAt');
+        });
+        setIsRunning(false);
+        setRunningBy(null);
+      } else if (syncedRunning) {
+        setIsRunning(true);
+        setRunningBy(syncedRunningBy || null);
+
+        // Schedule watchdog to unlock when lease expires
+        if (runningWatchdogRef.current) clearTimeout(runningWatchdogRef.current);
+        const remaining = Math.max(100, 12_000 - (Date.now() - (runStartedAt || 0)));
+        runningWatchdogRef.current = setTimeout(() => {
+          doc.transact(() => {
+            meta.set('isRunning', false);
+            meta.set('runningBy', null);
+            meta.delete('runStartedAt');
+          });
+          setIsRunning(false);
+          setRunningBy(null);
+        }, remaining);
+      } else {
+        if (runningWatchdogRef.current) {
+          clearTimeout(runningWatchdogRef.current);
+          runningWatchdogRef.current = null;
+        }
+        setIsRunning(false);
+        setRunningBy(null);
+      }
 
       const syncedResult = meta.get('executionResult') as ExecutionResult | null | undefined;
       if (syncedResult !== undefined) {
@@ -110,25 +161,20 @@ export function useRoomWorkspace({
       if (!synced) return;
 
       const doc = ydocRef.current;
-      const handle = editorHandleRef.current;
-      if (!doc || !handle) return;
+      if (!doc) return;
 
-      const meta = doc.getMap<any>('workspaceMeta');
-      const activeLang = (meta.get('language') as ExecutionLanguage | undefined) || language;
-      const currentCode = handle.getCode();
-      const preferred = getEffectiveTemplate(activeLang);
-
-      if (!currentCode.trim()) {
-        // Document is empty — populate with effective template for active language
-        handle.setCode(preferred);
-      } else if (isBuiltInBoilerplate(currentCode)) {
-        const customSaved = customTemplates[activeLang]?.trim();
-        if (customSaved && currentCode.trim() !== customSaved) {
-          handle.setCode(customSaved);
-        }
+      const sharedText = doc.getText('monaco');
+      // ONLY seed template if the shared Yjs document is completely empty after syncing
+      if (sharedText.length === 0) {
+        const meta = doc.getMap<any>('workspaceMeta');
+        const activeLang = (meta.get('language') as ExecutionLanguage | undefined) || language;
+        const preferred = getEffectiveTemplate(activeLang);
+        doc.transact(() => {
+          sharedText.insert(0, preferred);
+        });
       }
     },
-    [language, customTemplates, getEffectiveTemplate]
+    [language, getEffectiveTemplate]
   );
 
   const handleLanguageChange = useCallback(
@@ -167,6 +213,13 @@ export function useRoomWorkspace({
 
   const handleResetToTemplate = useCallback(() => {
     if (isEffectiveReadOnly) return;
+    const currentCode = editorHandleRef.current?.getCode() ?? '';
+    if (currentCode.trim().length > 0) {
+      const confirmed = window.confirm(
+        'Reset editor code to template? Your current changes in this file will be replaced.'
+      );
+      if (!confirmed) return;
+    }
     const targetTemplate = getEffectiveTemplate(language);
     editorHandleRef.current?.setCode(targetTemplate);
 
@@ -240,22 +293,38 @@ export function useRoomWorkspace({
     const doc = ydocRef.current;
     if (!doc || isRunning) return;
 
-    const code = editorHandleRef.current?.getCode() || doc.getText('monaco').toString();
-    if (!code.trim()) return;
+    const rawCode = editorHandleRef.current?.getCode() || doc.getText('monaco').toString();
+    if (!rawCode.trim()) return;
+
+    // Normalize \r\n to \n to prevent character index drift on Linux runner
+    const code = rawCode.replace(/\r\n/g, '\n');
 
     const meta = doc.getMap<any>('workspaceMeta');
     const currentLang = (meta.get('language') as ExecutionLanguage) || language;
-    const currentStdin = stdinRef.current;
+    const currentStdin = (stdinRef.current || '').replace(/\r\n/g, '\n');
     meta.set('stdin', currentStdin);
 
     if (isIoFolded) {
       toggleIoFold(false);
     }
 
+    const now = Date.now();
     doc.transact(() => {
       meta.set('isRunning', true);
       meta.set('runningBy', username || 'Peer');
+      meta.set('runStartedAt', now);
     });
+
+    // 10-second client-side failsafe watchdog: guarantees isRunning will NEVER remain stuck
+    const watchdogTimer = setTimeout(() => {
+      doc.transact(() => {
+        meta.set('isRunning', false);
+        meta.set('runningBy', null);
+        meta.delete('runStartedAt');
+      });
+      setIsRunning(false);
+      setRunningBy(null);
+    }, 10_000);
 
     try {
       const result = await executeCodeApi({
@@ -268,6 +337,7 @@ export function useRoomWorkspace({
       doc.transact(() => {
         meta.set('isRunning', false);
         meta.set('runningBy', null);
+        meta.delete('runStartedAt');
         meta.set('executionResult', result);
       });
     } catch (err) {
@@ -283,8 +353,18 @@ export function useRoomWorkspace({
       doc.transact(() => {
         meta.set('isRunning', false);
         meta.set('runningBy', null);
+        meta.delete('runStartedAt');
         meta.set('executionResult', fallbackError);
       });
+    } finally {
+      clearTimeout(watchdogTimer);
+      doc.transact(() => {
+        meta.set('isRunning', false);
+        meta.set('runningBy', null);
+        meta.delete('runStartedAt');
+      });
+      setIsRunning(false);
+      setRunningBy(null);
     }
   }, [isRunning, language, username, isIoFolded, toggleIoFold]);
 

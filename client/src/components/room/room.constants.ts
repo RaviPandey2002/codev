@@ -132,10 +132,5 @@ export function loadColumnOrder(): ColumnId[] {
 export function isBuiltInBoilerplate(code: string): boolean {
   const trimmed = code.trim();
   if (!trimmed) return true;
-  if (trimmed.includes('Welcome to CodeV')) return true;
-  if (trimmed.includes('CodeV Competitive Programming Arena')) return true;
-  if (trimmed.includes('CodeV Online C Compiler')) return true;
-  if (trimmed.includes('CodeV Python Workspace')) return true;
-  if (trimmed.includes('CodeV JavaScript Workspace')) return true;
   return Object.values(LANGUAGE_META).some((m) => m.template.trim() === trimmed);
 }

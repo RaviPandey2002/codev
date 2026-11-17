@@ -88,12 +88,21 @@ export function CollaborativeEditor({
   onDocReadyRef.current = onDocReady;
 
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disposablesRef = useRef<any[]>([]);
 
   const cleanupResources = () => {
     if (syncTimeoutRef.current) {
       clearTimeout(syncTimeoutRef.current);
       syncTimeoutRef.current = null;
     }
+
+    disposablesRef.current.forEach((d) => {
+      try {
+        if (typeof d?.dispose === 'function') d.dispose();
+      } catch {}
+    });
+    disposablesRef.current = [];
+
     try {
       bindingRef.current?.destroy();
     } catch {
@@ -135,27 +144,47 @@ export function CollaborativeEditor({
     cleanupResources();
     editorRef.current = editor;
 
-    editor.onDidChangeCursorPosition((e) => {
+    const cursorDisp = editor.onDidChangeCursorPosition((e) => {
       onCursorRef.current?.({
         lineNumber: e.position.lineNumber,
         column: e.position.column,
       });
     });
+    if (cursorDisp) disposablesRef.current.push(cursorDisp);
 
     // 1. Initialize a new Yjs document
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
 
     // Register Ctrl/Cmd + Enter shortcut to run code directly from the editor
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+    const cmdDisp = editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       onRunRef.current?.();
     });
+    if (cmdDisp) disposablesRef.current.push(cmdDisp);
 
-    // 2. Derive the WebSocket URL (port 3007)
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    const defaultWsUrl = `${protocol}//${host}:3007/ws/rooms`;
-    const wsBaseUrl = import.meta.env.VITE_WS_URL || defaultWsUrl;
+    // 2. Derive the WebSocket URL
+    let defaultWsUrl = '';
+    if (import.meta.env.VITE_WS_URL) {
+      defaultWsUrl = import.meta.env.VITE_WS_URL;
+    } else if (import.meta.env.VITE_API_URL) {
+      try {
+        const apiUrl = new URL(import.meta.env.VITE_API_URL, window.location.origin);
+        const wsProto = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+        defaultWsUrl = `${wsProto}//${apiUrl.host}/ws/rooms`;
+      } catch {
+        // fallback
+      }
+    }
+    if (!defaultWsUrl) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.hostname;
+      const port = window.location.port;
+      const isLocalDev = host === 'localhost' || host === '127.0.0.1' || port === '5173';
+      defaultWsUrl = isLocalDev
+        ? `${protocol}//${host}:3007/ws/rooms`
+        : `${protocol}//${window.location.host}/ws/rooms`;
+    }
+    const wsBaseUrl = defaultWsUrl;
 
     // 3. Connect to the WebSocket room
     const provider = new WebsocketProvider(wsBaseUrl, roomId, ydoc);
@@ -184,21 +213,22 @@ export function CollaborativeEditor({
         return editorRef.current?.getModel()?.getValue() || '';
       },
       setCode: (newCode: string) => {
+        const normalized = newCode.replace(/\r\n/g, '\n');
         const currentDoc = ydocRef.current;
         if (currentDoc) {
           const sharedText = currentDoc.getText('monaco');
-          if (sharedText.toString() !== newCode) {
+          if (sharedText.toString() !== normalized) {
             currentDoc.transact(() => {
               sharedText.delete(0, sharedText.length);
-              sharedText.insert(0, newCode);
+              sharedText.insert(0, normalized);
             });
           }
           return;
         }
 
         const currentModel = editorRef.current?.getModel();
-        if (currentModel && currentModel.getValue() !== newCode) {
-          currentModel.setValue(newCode);
+        if (currentModel && currentModel.getValue() !== normalized) {
+          currentModel.setValue(normalized);
         }
       },
       formatCode: () => {
@@ -247,7 +277,9 @@ export function CollaborativeEditor({
     // Safety timeout: never leave the user locked or displaying a sync spinner indefinitely
     syncTimeoutRef.current = setTimeout(() => {
       setIsConnecting(false);
-      onSyncRef.current?.(true);
+      if (provider.synced) {
+        onSyncRef.current?.(true);
+      }
     }, 1500);
 
     // 7. Track peer count changes (only notify parent when count actually changes)

@@ -66,6 +66,13 @@ class RoomHub {
       try {
         Y.applyUpdate(doc, new Uint8Array(latestSnapshot.snapshot));
         hydrated = true;
+        // Clear any stale execution state persisted from previous ungraceful server shutdowns
+        const meta = doc.getMap('workspaceMeta');
+        if (meta.get('isRunning')) {
+          meta.set('isRunning', false);
+          meta.set('runningBy', null);
+          meta.delete('runStartedAt');
+        }
       } catch (err) {
         console.error(`[CRDT Corrupt] Failed to apply Yjs snapshot for room ${roomId}:`, err);
       }
@@ -315,6 +322,14 @@ class RoomHub {
 
   private async saveSnapshot(roomId: string, room: RoomSession) {
     try {
+      // Ephemeral execution run flags must never be persisted to long-term snapshot storage
+      const meta = room.doc.getMap('workspaceMeta');
+      if (meta.get('isRunning')) {
+        meta.set('isRunning', false);
+        meta.set('runningBy', null);
+        meta.delete('runStartedAt');
+      }
+
       const stateUpdate = Y.encodeStateAsUpdate(room.doc);
       await db
         .insert(yjsSnapshots)

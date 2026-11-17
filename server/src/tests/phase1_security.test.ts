@@ -208,6 +208,36 @@ async function runSecurityTests() {
     await roomHub.flushAllRooms();
     console.log('✓ roomHub.flushAllRooms() executed cleanly without errors');
 
+    // ----------------------------------------------------
+    // TEST 5: Snapshot Sanitization (Prevent Stuck Running State)
+    // ----------------------------------------------------
+    console.log('\n[TEST 5] Testing Snapshot Sanitization of Ephemeral Execution Flags...');
+    const testSession = await roomHub.getOrCreateRoomSession(publicRoomId);
+    const meta = testSession.doc.getMap('workspaceMeta');
+    meta.set('isRunning', true);
+    meta.set('runningBy', 'TestRunner');
+    meta.set('runStartedAt', Date.now());
+
+    // Flush to DB
+    await roomHub.flushAllRooms();
+
+    // Destroy in-memory session to force cold rehydration from Postgres snapshot
+    roomHub.destroyRoomSession(publicRoomId);
+
+    // Rehydrate
+    const rehydratedSession = await roomHub.getOrCreateRoomSession(publicRoomId);
+    const rehydratedMeta = rehydratedSession.doc.getMap('workspaceMeta');
+    const isRunningAfterRehydrate = rehydratedMeta.get('isRunning');
+    const runningByAfterRehydrate = rehydratedMeta.get('runningBy');
+
+    if (isRunningAfterRehydrate) {
+      throw new Error(`Expected isRunning to be false after rehydration, got ${isRunningAfterRehydrate}`);
+    }
+    if (runningByAfterRehydrate) {
+      throw new Error(`Expected runningBy to be null after rehydration, got ${runningByAfterRehydrate}`);
+    }
+    console.log('✓ Snapshot successfully sanitized: isRunning is false and runningBy is null after DB rehydration');
+
     console.log('\n=== ALL PHASE 1 SECURITY TESTS PASSED SUCCESSFULLY! ===');
   } finally {
     // Cleanup created test records
