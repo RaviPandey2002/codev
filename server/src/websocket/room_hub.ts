@@ -8,14 +8,21 @@ import { db } from '../db';
 import { desc, eq } from 'drizzle-orm';
 import type { WebSocket } from 'ws';
 import { clearTimeout } from 'node:timers';
+import type { RoomRole } from '@codev/shared';
 
 export const MESSAGE_SYNC = 0;
 export const MESSAGE_AWARENESS = 1;
 
+export interface ConnectionMeta {
+  controlledIds: Set<number>;
+  userId: string;
+  role: RoomRole;
+}
+
 interface RoomSession {
   doc: Y.Doc;
   awareness: awarenessProtocol.Awareness;
-  conns: Map<WebSocket, Set<number>>;
+  conns: Map<WebSocket, ConnectionMeta>;
   saveTimeout: NodeJS.Timeout | null;
   evictionTimeout: NodeJS.Timeout | null;
   heartBeatInterval: NodeJS.Timeout | null;
@@ -54,9 +61,17 @@ class RoomHub {
       orderBy: [desc(yjsSnapshots.updatedAt)],
     });
 
+    let hydrated = false;
     if (latestSnapshot && latestSnapshot.snapshot) {
-      Y.applyUpdate(doc, new Uint8Array(latestSnapshot.snapshot));
-    } else {
+      try {
+        Y.applyUpdate(doc, new Uint8Array(latestSnapshot.snapshot));
+        hydrated = true;
+      } catch (err) {
+        console.error(`[CRDT Corrupt] Failed to apply Yjs snapshot for room ${roomId}:`, err);
+      }
+    }
+
+    if (!hydrated) {
       const file = await db.query.roomFiles.findFirst({
         where: eq(roomFiles.roomId, roomId),
       });
@@ -102,7 +117,7 @@ class RoomHub {
         origin: any
       ) => {
         if (origin && room.conns.has(origin)) {
-          const controlled = room.conns.get(origin)!;
+          const controlled = room.conns.get(origin)!.controlledIds;
           added.forEach((id) => controlled.add(id));
           removed.forEach((id) => controlled.delete(id));
         }
@@ -130,11 +145,24 @@ class RoomHub {
       const uint8Data = new Uint8Array(data);
       const decoder = decoding.createDecoder(uint8Data);
       const messageType = decoding.readVarUint(decoder);
+      const connMeta = room.conns.get(conn);
+      const isViewer = connMeta?.role === 'VIEWER';
 
       if (messageType === MESSAGE_SYNC) {
         const syncEncoder = encoding.createEncoder();
         encoding.writeVarUint(syncEncoder, MESSAGE_SYNC);
-        syncProtocol.readSyncMessage(decoder, syncEncoder, room.doc, conn);
+
+        if (isViewer) {
+          // VIEWER mode: only handle SyncStep1 (reading state vector and replying with missing doc updates).
+          // Drop SyncStep2 and Update messages so viewers cannot mutate room.doc.
+          const syncMessageType = decoding.readVarUint(decoder);
+          if (syncMessageType === syncProtocol.messageYjsSyncStep1) {
+            syncProtocol.readSyncStep1(decoder, syncEncoder, room.doc);
+          }
+        } else {
+          syncProtocol.readSyncMessage(decoder, syncEncoder, room.doc, conn);
+        }
+
         if (encoding.length(syncEncoder) > 1 && conn.readyState === 1) {
           conn.send(encoding.toUint8Array(syncEncoder));
         }
@@ -154,6 +182,7 @@ class RoomHub {
     conn: WebSocket,
     roomId: string,
     _user: { id: string; username: string },
+    role: RoomRole = 'VIEWER',
     earlyMessages: Buffer[] = [],
     onEarlyMessage?: (data: Buffer) => void
   ) {
@@ -168,7 +197,7 @@ class RoomHub {
     }
 
     const controlledIds = new Set<number>();
-    room.conns.set(conn, controlledIds);
+    room.conns.set(conn, { controlledIds, userId: _user.id, role });
 
     // cancel pending eviction - a peer reconnected within grace window
     if (room.evictionTimeout) {
@@ -238,12 +267,12 @@ class RoomHub {
     }
 
     conn.on('close', () => {
-      const controlled = room.conns.get(conn);
+      const connMeta = room.conns.get(conn);
       room.conns.delete(conn);
-      if (controlled && controlled.size > 0) {
+      if (connMeta && connMeta.controlledIds.size > 0) {
         awarenessProtocol.removeAwarenessStates(
           room.awareness,
-          Array.from(controlled),
+          Array.from(connMeta.controlledIds),
           null
         );
       }
@@ -335,6 +364,47 @@ class RoomHub {
     } catch {}
 
     this.rooms.delete(roomId);
+  }
+
+  disconnectUser(roomId: string, userId: string) {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    for (const [conn, meta] of room.conns.entries()) {
+      if (meta.userId === userId) {
+        try {
+          conn.close(4403, 'Workspace left');
+        } catch {}
+        if (meta.controlledIds.size > 0) {
+          awarenessProtocol.removeAwarenessStates(
+            room.awareness,
+            Array.from(meta.controlledIds),
+            null
+          );
+        }
+        room.conns.delete(conn);
+      }
+    }
+
+    if (room.conns.size === 0) {
+      if (room.saveTimeout) {
+        clearTimeout(room.saveTimeout);
+        room.saveTimeout = null;
+      }
+      this.saveSnapshot(roomId, room);
+    }
+  }
+
+  async flushAllRooms(): Promise<void> {
+    const promises: Promise<void>[] = [];
+    for (const [roomId, room] of this.rooms.entries()) {
+      if (room.saveTimeout) {
+        clearTimeout(room.saveTimeout);
+        room.saveTimeout = null;
+      }
+      promises.push(this.saveSnapshot(roomId, room));
+    }
+    await Promise.allSettled(promises);
   }
 }
 

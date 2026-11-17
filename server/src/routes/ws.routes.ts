@@ -5,6 +5,7 @@ import { rooms, roomMembers } from '../db/schema';
 import { and, eq } from 'drizzle-orm';
 import { roomHub } from '../websocket/room_hub';
 import type { WebSocket } from 'ws';
+import type { RoomRole } from '@codev/shared';
 
 interface TokenPayload extends jwt.JwtPayload {
   userId: string;
@@ -38,6 +39,14 @@ export default async function wsRoutes(app: FastifyInstance) {
     '/rooms/:roomId',
     { websocket: true },
     async (socket: WebSocket, req: FastifyRequest<{ Params: WsParams; Querystring: WsQuery }>) => {
+      // Validate Origin header if present (CSWSH Defense)
+      const allowedOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
+      const origin = req.headers.origin;
+      if (origin && origin !== allowedOrigin && !allowedOrigin.split(',').map((s) => s.trim()).includes(origin)) {
+        socket.close(4403, 'Forbidden origin');
+        return;
+      }
+
       // Buffer any incoming frames that arrive while async auth/DB checks are running
       const earlyMessages: Buffer[] = [];
       const onEarlyMessage = (data: Buffer) => {
@@ -63,7 +72,10 @@ export default async function wsRoutes(app: FastifyInstance) {
           return;
         }
 
-        if (room.isPrivate && room.ownerId !== user.userId) {
+        let userRole: RoomRole = 'VIEWER';
+        if (room.ownerId === user.userId) {
+          userRole = 'OWNER';
+        } else {
           const member = await db.query.roomMembers.findFirst({
             where: and(
               eq(roomMembers.roomId, roomId),
@@ -71,10 +83,14 @@ export default async function wsRoutes(app: FastifyInstance) {
             ),
           });
 
-          if (!member) {
+          if (member) {
+            userRole = member.role as RoomRole;
+          } else if (room.isPrivate) {
             socket.off('message', onEarlyMessage);
             socket.close(4403, 'Forbidden');
             return;
+          } else {
+            userRole = 'VIEWER';
           }
         }
 
@@ -82,6 +98,7 @@ export default async function wsRoutes(app: FastifyInstance) {
           socket,
           roomId,
           { id: user.userId, username: user.username },
+          userRole,
           earlyMessages,
           onEarlyMessage
         );

@@ -290,6 +290,11 @@ export async function joinRoom(roomId: string, userId: string): Promise<RoomDTO>
     .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)))
     .limit(1);
 
+  // If room is private, only owner and existing members may join
+  if (roomRecord.isPrivate && roomRecord.ownerId !== userId && !existingMember) {
+    throw new AppError('Cannot join private workspace without an invite', 403, 'FORBIDDEN');
+  }
+
   let userRole: RoomRole = 'EDITOR';
 
   if (existingMember) {
@@ -345,6 +350,9 @@ export async function deleteOrLeaveRoom(
   if (!membership) {
     throw new AppError('You are not a member of this workspace', 403, 'FORBIDDEN');
   }
+
+  // Sever active WebSocket connections for this departing user
+  roomHub.disconnectUser(roomId, userId);
 
   await db
     .delete(roomMembers)

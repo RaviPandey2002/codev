@@ -151,7 +151,10 @@ function runProcess(
 
     const spawnOptions: any = {
       cwd,
-      env: { PATH: process.env.PATH },
+      env: {
+        PATH: process.env.PATH,
+        NODE_OPTIONS: '--max-old-space-size=128',
+      },
       detached: process.platform !== 'win32',
     };
 
@@ -176,7 +179,9 @@ function runProcess(
           child.kill('SIGKILL');
         }
       } catch {
-        child.kill('SIGKILL');
+        try {
+          child.kill('SIGKILL');
+        } catch {}
       }
     };
 
@@ -246,6 +251,19 @@ const executeViaLocal = async (params: ExecutionParams): Promise<ExecutionResult
 
     // 1. Compiled Languages (C++ and C)
     if (language === 'cpp' || language === 'c') {
+      // Disallow absolute paths or directory traversal in #include to prevent host file exfiltration
+      if (/#\s*include\s*["<](\s*\/|\s*\.\.)/.test(code)) {
+        return {
+          stdout: '',
+          stderr: 'SecurityError: Absolute paths and directory traversal in #include directives are forbidden.',
+          exitCode: 1,
+          executionTimeMs: 0,
+          status: 'COMPILE_ERROR',
+          triggeredBy,
+          timestamp: new Date().toISOString(),
+        };
+      }
+
       const sourceFile = language === 'cpp' ? 'main.cpp' : 'main.c';
       const compiler = language === 'cpp' ? 'g++' : 'gcc';
       const compileArgs = getCompileArgs(language, compilerProfile, sourceFile);
@@ -373,8 +391,8 @@ async function executeViaPiston(params: ExecutionParams): Promise<ExecutionResul
   const timeoutId = setTimeout(() => controller.abort(), EXECUTION_TIMEOUT_MS + 3000);
   const startTime = performance.now();
 
-  // Fallback to official Piston endpoint (requires whitelist) or custom self-hosted instance
-  const pistonUrl = process.env.PISTON_API_URL || 'https://emkc.org/api/v2/piston/execute';
+  // Self-hosted Piston instance endpoint (e.g. your own Docker container on port 2000)
+  const pistonUrl = process.env.PISTON_API_URL || 'http://localhost:2000/api/v2/execute';
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (process.env.PISTON_API_KEY) {
     headers['Authorization'] = process.env.PISTON_API_KEY;
@@ -444,28 +462,16 @@ async function executeViaPiston(params: ExecutionParams): Promise<ExecutionResul
 }
 
 export async function executeCode(params: ExecutionParams): Promise<ExecutionResult> {
-  // Default to local bare-metal execution with Linux kernel guards (prlimit, process-group kill, 64KB cap).
-  // Can be set to 'piston' via EXECUTION_DRIVER=piston if a private/whitelisted Piston instance is available.
-  // OR if we spin up our own Docker based isolated env. for code execution.
   const driver = process.env.EXECUTION_DRIVER || 'local';
 
-  if (driver === 'local') {
-    return await executeViaLocal(params);
+  if (driver === 'piston') {
+    try {
+      return await executeViaPiston(params);
+    } catch (error: any) {
+      console.warn('Self-hosted Piston sandbox unavailable, falling back to local runner:', error?.message);
+      return await executeViaLocal(params);
+    }
   }
 
-  // Remote Piston execution (strictly used when EXECUTION_DRIVER=piston is explicitly configured)
-  try {
-    return await executeViaPiston(params);
-  } catch (error: any) {
-    console.error('Piston execution error:', error);
-    return {
-      stdout: '',
-      stderr: `Execution service error: ${error?.message || 'Remote sandbox unavailable.'}`,
-      exitCode: 1,
-      executionTimeMs: 0,
-      status: 'RUNTIME_ERROR',
-      triggeredBy: params.triggeredBy,
-      timestamp: new Date().toISOString(),
-    };
-  }
+  return await executeViaLocal(params);
 }
