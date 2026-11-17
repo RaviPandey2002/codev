@@ -19,6 +19,7 @@ interface RoomNavbarProps {
   room: RoomDTO;
   copiedId: boolean;
   onCopyRoomLink: () => void;
+  onOpenShareModal: () => void;
   isRunning: boolean;
   onRunCode: () => void;
   isLayoutMenuOpen: boolean;
@@ -38,6 +39,7 @@ export function RoomNavbar({
   room,
   copiedId,
   onCopyRoomLink,
+  onOpenShareModal,
   isRunning,
   onRunCode,
   isLayoutMenuOpen,
@@ -247,12 +249,12 @@ export function RoomNavbar({
           type="button"
           variant="outline"
           size="sm"
-          onClick={onCopyRoomLink}
+          onClick={onOpenShareModal}
           className="h-7 px-2 sm:px-2.5 text-xs font-mono gap-1 text-muted-foreground hover:text-foreground border-border/60 cursor-pointer"
-          title="Copy share link"
+          title="Share workspace and manage collaborators"
         >
-          {copiedId ? <Check size={13} className="text-emerald-500" /> : <Share2 size={13} />}
-          <span className="hidden sm:inline">{copiedId ? 'Copied' : 'Share'}</span>
+          <Share2 size={13} />
+          <span className="hidden sm:inline">Share</span>
         </Button>
 
         <div className="flex items-center gap-1.5 px-2 h-7 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs font-mono text-emerald-500">

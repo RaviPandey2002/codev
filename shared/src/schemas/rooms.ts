@@ -44,3 +44,15 @@ export const joinRoomSchema = z.object({
 });
 
 export type JoinRoomInput = z.infer<typeof joinRoomSchema>;
+
+export const inviteMemberSchema = z.object({
+  identifier: z
+    .string()
+    .trim()
+    .min(1, 'Username or email is required')
+    .max(255),
+  role: roomRoleSchema.optional().default('EDITOR'),
+});
+
+export type InviteMemberInput = z.input<typeof inviteMemberSchema>;
+export type InviteMemberOutput = z.output<typeof inviteMemberSchema>;

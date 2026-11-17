@@ -7,6 +7,7 @@ import { ContextColumn } from '@/components/room/ContextColumn';
 import { EditorColumn } from '@/components/room/EditorColumn';
 import { IoColumn } from '@/components/room/IoColumn';
 import { RoomNavbar } from '@/components/room/RoomNavbar';
+import { ShareModal } from '@/components/room/ShareModal';
 import { type ColumnId, inferInitialLanguage } from '@/components/room/room.constants';
 import { Button } from '@/components/ui/button';
 import { useRoomWorkspace } from '@/hooks/useRoomWorkspace';
@@ -25,6 +26,7 @@ export default function RoomPage() {
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState(false);
   const [peerCount, setPeerCount] = useState(1);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   // Personal safety lock: lets any editor switch to read-only viewing mode
   const [isSelfViewOnly, setIsSelfViewOnly] = useState(false);
@@ -217,6 +219,7 @@ export default function RoomPage() {
         room={room}
         copiedId={copiedId}
         onCopyRoomLink={copyRoomLink}
+        onOpenShareModal={() => setIsShareModalOpen(true)}
         isRunning={isRunning}
         onRunCode={handleRunCode}
         isLayoutMenuOpen={isLayoutMenuOpen}
@@ -231,6 +234,15 @@ export default function RoomPage() {
         isSynced={isSynced}
         peerCount={peerCount}
       />
+
+      {room && (
+        <ShareModal
+          room={room}
+          userRole={userRole}
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
+        />
+      )}
 
       {/* ================= MAIN 3-COLUMN DOCKABLE WORKSPACE ================= */}
       <main className="flex-1 min-h-0 w-full p-1.5 sm:p-2 bg-muted/20 overflow-hidden flex flex-col">

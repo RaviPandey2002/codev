@@ -89,6 +89,70 @@ async function runSecurityTests() {
     }
     console.log('✓ Private workspace direct join attempt properly blocked (403 Forbidden)');
 
+    // 1.6 Owner explicitly invites user to the private room
+    const attackerData = JSON.parse(attackerRes.body).user;
+    const inviteRes = await app.inject({
+      method: 'POST',
+      url: `/rooms/${privateRoomId}/members`,
+      headers: { cookie: ownerCookie },
+      payload: {
+        identifier: attackerData.username,
+        role: 'EDITOR',
+      },
+    });
+    if (inviteRes.statusCode !== 201) {
+      throw new Error(`Expected 201 on member invite, got ${inviteRes.statusCode}`);
+    }
+    console.log('✓ Owner invited collaborator to private room successfully');
+
+    // 1.7 Collaborator now queries private workspace details -> Expected: 200 OK
+    const authDetailsRes = await app.inject({
+      method: 'GET',
+      url: `/rooms/${privateRoomId}`,
+      headers: { cookie: attackerCookie },
+    });
+    if (authDetailsRes.statusCode !== 200) {
+      throw new Error(`Expected 200 on authorized private room query, got ${authDetailsRes.statusCode}`);
+    }
+    console.log('✓ Invited collaborator now has access to private room (200 OK)');
+
+    // 1.8 Collaborator lists members -> Expected: 200 OK with owner and member
+    const membersListRes = await app.inject({
+      method: 'GET',
+      url: `/rooms/${privateRoomId}/members`,
+      headers: { cookie: attackerCookie },
+    });
+    const membersList = JSON.parse(membersListRes.body);
+    const nonOwnerMembers = membersList.members.filter(
+      (m: any) => m.userId !== membersList.owner.userId
+    );
+    if (membersListRes.statusCode !== 200 || nonOwnerMembers.length !== 1) {
+      throw new Error('Failed to list workspace members');
+    }
+    console.log('✓ Workspace members listed successfully');
+
+    // 1.9 Owner removes collaborator -> Expected: 200 OK
+    const removeMemberRes = await app.inject({
+      method: 'DELETE',
+      url: `/rooms/${privateRoomId}/members/${attackerData.id}`,
+      headers: { cookie: ownerCookie },
+    });
+    if (removeMemberRes.statusCode !== 200) {
+      throw new Error(`Expected 200 on remove member, got ${removeMemberRes.statusCode}`);
+    }
+    console.log('✓ Owner removed collaborator from workspace');
+
+    // 1.10 Ex-collaborator queries private workspace -> Expected: 403 Forbidden again
+    const postRemoveRes = await app.inject({
+      method: 'GET',
+      url: `/rooms/${privateRoomId}`,
+      headers: { cookie: attackerCookie },
+    });
+    if (postRemoveRes.statusCode !== 403) {
+      throw new Error(`Expected 403 after member removal, got ${postRemoveRes.statusCode}`);
+    }
+    console.log('✓ Ex-collaborator access severed and blocked (403 Forbidden)');
+
     // ----------------------------------------------------
     // TEST 2: C/C++ Preprocessor #include Directory Traversal Sanitization
     // ----------------------------------------------------

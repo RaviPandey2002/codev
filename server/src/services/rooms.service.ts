@@ -1,12 +1,13 @@
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, or, ilike } from 'drizzle-orm';
 import { db } from '../db';
-import { rooms, roomMembers, roomFiles } from '../db/schema';
+import { rooms, roomMembers, roomFiles, users } from '../db/schema';
 import { AppError } from '../utils/errors';
 import { generateRoomId } from '../utils/id';
 import { roomHub } from '../websocket/room_hub';
 import type {
   RoomDTO,
   RoomFileDTO,
+  RoomMemberDTO,
   RoomRole,
   RoomSourceType,
   RoomTemplate,
@@ -359,6 +360,183 @@ export async function deleteOrLeaveRoom(
     .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)));
 
   return { deleted: false, left: true };
+}
+
+export async function inviteRoomMember(params: {
+  roomId: string;
+  ownerId: string;
+  identifier: string;
+  role?: RoomRole;
+}): Promise<RoomMemberDTO> {
+  const { roomId, ownerId, identifier, role = 'EDITOR' } = params;
+
+  const [roomRecord] = await db.select().from(rooms).where(eq(rooms.id, roomId)).limit(1);
+  if (!roomRecord) {
+    throw new AppError('Workspace not found', 404, 'ROOM_NOT_FOUND');
+  }
+
+  if (roomRecord.ownerId !== ownerId) {
+    throw new AppError('Only the workspace owner can invite members', 403, 'FORBIDDEN');
+  }
+
+  // Lookup target user by username or email
+  const [targetUser] = await db
+    .select({ id: users.id, username: users.username, email: users.email })
+    .from(users)
+    .where(or(ilike(users.username, identifier), ilike(users.email, identifier)))
+    .limit(1);
+
+  if (!targetUser) {
+    throw new AppError(`User "${identifier}" not found`, 404, 'USER_NOT_FOUND');
+  }
+
+  if (targetUser.id === ownerId) {
+    throw new AppError('User is already the workspace owner', 400, 'CANNOT_INVITE_OWNER');
+  }
+
+  // Check if target user is already a member
+  const [existingMember] = await db
+    .select()
+    .from(roomMembers)
+    .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, targetUser.id)))
+    .limit(1);
+
+  if (existingMember) {
+    // Update role if changed
+    if (existingMember.role !== role) {
+      await db
+        .update(roomMembers)
+        .set({ role })
+        .where(eq(roomMembers.id, existingMember.id));
+    }
+    return {
+      id: existingMember.id,
+      roomId,
+      userId: targetUser.id,
+      username: targetUser.username,
+      role,
+      joinedAt: existingMember.joinedAt.toISOString(),
+    };
+  }
+
+  // Add new member
+  const [newMember] = await db
+    .insert(roomMembers)
+    .values({
+      roomId,
+      userId: targetUser.id,
+      role,
+    })
+    .returning();
+
+  return {
+    id: newMember.id,
+    roomId,
+    userId: targetUser.id,
+    username: targetUser.username,
+    role: newMember.role as RoomRole,
+    joinedAt: newMember.joinedAt.toISOString(),
+  };
+}
+
+export async function listRoomMembers(
+  roomId: string,
+  userId: string
+): Promise<{
+  owner: { userId: string; username: string; email: string };
+  members: RoomMemberDTO[];
+}> {
+  const [roomRecord] = await db.select().from(rooms).where(eq(rooms.id, roomId)).limit(1);
+  if (!roomRecord) {
+    throw new AppError('Workspace not found', 404, 'ROOM_NOT_FOUND');
+  }
+
+  // Check user access
+  if (roomRecord.isPrivate && roomRecord.ownerId !== userId) {
+    const [membership] = await db
+      .select({ id: roomMembers.id })
+      .from(roomMembers)
+      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)))
+      .limit(1);
+    if (!membership) {
+      throw new AppError('Access to this private workspace is forbidden', 403, 'FORBIDDEN');
+    }
+  }
+
+  // Fetch owner details
+  const [owner] = await db
+    .select({ id: users.id, username: users.username, email: users.email })
+    .from(users)
+    .where(eq(users.id, roomRecord.ownerId))
+    .limit(1);
+
+  // Fetch members
+  const memberRows = await db
+    .select({
+      id: roomMembers.id,
+      roomId: roomMembers.roomId,
+      userId: roomMembers.userId,
+      username: users.username,
+      role: roomMembers.role,
+      joinedAt: roomMembers.joinedAt,
+    })
+    .from(roomMembers)
+    .innerJoin(users, eq(roomMembers.userId, users.id))
+    .where(eq(roomMembers.roomId, roomId))
+    .orderBy(desc(roomMembers.joinedAt));
+
+  return {
+    owner: {
+      userId: owner?.id || roomRecord.ownerId,
+      username: owner?.username || 'Unknown',
+      email: owner?.email || '',
+    },
+    members: memberRows.map((m) => ({
+      id: m.id,
+      roomId: m.roomId,
+      userId: m.userId,
+      username: m.username,
+      role: m.role as RoomRole,
+      joinedAt: m.joinedAt.toISOString(),
+    })),
+  };
+}
+
+export async function removeRoomMember(
+  roomId: string,
+  ownerId: string,
+  targetUserId: string
+): Promise<{ removed: boolean }> {
+  const [roomRecord] = await db.select().from(rooms).where(eq(rooms.id, roomId)).limit(1);
+  if (!roomRecord) {
+    throw new AppError('Workspace not found', 404, 'ROOM_NOT_FOUND');
+  }
+
+  if (roomRecord.ownerId !== ownerId) {
+    throw new AppError('Only the workspace owner can remove members', 403, 'FORBIDDEN');
+  }
+
+  if (targetUserId === ownerId) {
+    throw new AppError('Cannot remove workspace owner', 400, 'CANNOT_REMOVE_OWNER');
+  }
+
+  const [membership] = await db
+    .select({ id: roomMembers.id })
+    .from(roomMembers)
+    .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, targetUserId)))
+    .limit(1);
+
+  if (!membership) {
+    throw new AppError('Member not found in workspace', 404, 'MEMBER_NOT_FOUND');
+  }
+
+  roomHub.disconnectUser(roomId, targetUserId);
+
+  await db
+    .delete(roomMembers)
+    .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, targetUserId)));
+
+  return { removed: true };
 }
 
 
