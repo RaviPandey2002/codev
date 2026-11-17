@@ -27,3 +27,10 @@ export async function joinRoomApi(roomId: string): Promise<RoomDTO> {
   return res.data.room;
 }
 
+export async function deleteOrLeaveRoomApi(
+  roomId: string
+): Promise<{ ok: boolean; deleted: boolean; left: boolean }> {
+  const res = await api.delete<{ ok: boolean; deleted: boolean; left: boolean }>(`/rooms/${roomId}`);
+  return res.data;
+}
+

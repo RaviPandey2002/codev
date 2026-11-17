@@ -3,6 +3,7 @@ import { db } from '../db';
 import { rooms, roomMembers, roomFiles } from '../db/schema';
 import { AppError } from '../utils/errors';
 import { generateRoomId } from '../utils/id';
+import { roomHub } from '../websocket/room_hub';
 import type {
   RoomDTO,
   RoomFileDTO,
@@ -316,4 +317,40 @@ export async function joinRoom(roomId: string, userId: string): Promise<RoomDTO>
     updatedAt: roomRecord.updatedAt.toISOString(),
   };
 }
+
+export async function deleteOrLeaveRoom(
+  roomId: string,
+  userId: string
+): Promise<{ deleted: boolean; left: boolean }> {
+  const [roomRecord] = await db.select().from(rooms).where(eq(rooms.id, roomId)).limit(1);
+
+  if (!roomRecord) {
+    throw new AppError('Workspace not found', 404, 'ROOM_NOT_FOUND');
+  }
+
+  // If user is owner: delete the workspace and purge active session
+  if (roomRecord.ownerId === userId) {
+    roomHub.destroyRoomSession(roomId);
+    await db.delete(rooms).where(eq(rooms.id, roomId));
+    return { deleted: true, left: false };
+  }
+
+  // Otherwise, user is a collaborator/viewer leaving the workspace
+  const [membership] = await db
+    .select()
+    .from(roomMembers)
+    .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)))
+    .limit(1);
+
+  if (!membership) {
+    throw new AppError('You are not a member of this workspace', 403, 'FORBIDDEN');
+  }
+
+  await db
+    .delete(roomMembers)
+    .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)));
+
+  return { deleted: false, left: true };
+}
+
 

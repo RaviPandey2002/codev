@@ -68,5 +68,16 @@ export default async function roomRoutes(app: FastifyInstance) {
       return reply.status(200).send({ room });
     }
   );
+
+  // DELETE /rooms/:id - Delete workspace (owner) or leave workspace (collaborator)
+  app.delete(
+    '/:id',
+    { preHandler: [validateParams(roomIdParamSchema)] },
+    async (req, reply) => {
+      const { id } = req.params as RoomIdParams;
+      const result = await roomsService.deleteOrLeaveRoom(id, req.user.id);
+      return reply.status(200).send({ ok: true, ...result });
+    }
+  );
 }
 

@@ -305,6 +305,37 @@ class RoomHub {
       console.error(`Failed to save Yjs snapshot for room ${roomId}:`, err);
     }
   }
+
+  destroyRoomSession(roomId: string) {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    if (room.saveTimeout) {
+      clearTimeout(room.saveTimeout);
+      room.saveTimeout = null;
+    }
+    if (room.evictionTimeout) {
+      clearTimeout(room.evictionTimeout);
+      room.evictionTimeout = null;
+    }
+    if (room.heartBeatInterval) {
+      clearInterval(room.heartBeatInterval);
+      room.heartBeatInterval = null;
+    }
+
+    for (const conn of room.conns.keys()) {
+      try {
+        conn.close(1000, 'Workspace deleted');
+      } catch {}
+    }
+
+    try {
+      room.doc.destroy();
+      room.awareness.destroy();
+    } catch {}
+
+    this.rooms.delete(roomId);
+  }
 }
 
 export const roomHub = new RoomHub();
