@@ -116,6 +116,21 @@ export function CollaborativeEditor({
     ydocRef.current = null;
   };
 
+  const handleBeforeMount = (monaco: any) => {
+    monaco.editor.defineTheme('codev-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#131825',
+        'editorGutter.background': '#131825',
+        'editor.lineHighlightBackground': '#182135',
+        'editorLineNumber.foreground': '#64748b',
+        'editorLineNumber.activeForeground': '#cbd5e1',
+      },
+    });
+  };
+
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     cleanupResources();
     editorRef.current = editor;
@@ -274,7 +289,8 @@ export function CollaborativeEditor({
       <Editor
         height="100%"
         width="100%"
-        theme={theme === 'dark' ? 'vs-dark' : 'light'}
+        beforeMount={handleBeforeMount}
+        theme={theme === 'dark' ? 'codev-dark' : 'light'}
         language={language}
         onMount={handleEditorDidMount}
         options={{

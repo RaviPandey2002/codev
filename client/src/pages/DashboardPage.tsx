@@ -18,14 +18,15 @@ import {
   Code,
   Loader2,
   X,
-  FileCode
+  FileCode,
+  Trash2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuthStore } from '@/stores/auth.store';
-import { listRoomsApi, createRoomApi, joinRoomApi } from '@/api/rooms';
+import { listRoomsApi, createRoomApi, joinRoomApi, deleteOrLeaveRoomApi } from '@/api/rooms';
 import { getApiErrorMessage } from '@/lib/api';
 import type { RoomDTO, RoomTemplate, RoomSourceType } from '@codev/shared';
 
@@ -119,6 +120,42 @@ export default function DashboardPage() {
     return () => document.removeEventListener('keydown', handleEsc);
   }, [isModalOpen]);
 
+  // Delete / Leave confirmation modal state
+  const [actionTarget, setActionTarget] = useState<{
+    workspace: RoomDTO;
+    type: 'DELETE' | 'LEAVE';
+  } | null>(null);
+  const [isActionPending, setIsActionPending] = useState(false);
+
+  useEffect(() => {
+    if (!actionTarget) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isActionPending) setActionTarget(null);
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [actionTarget, isActionPending]);
+
+  const handleConfirmDeleteOrLeave = async () => {
+    if (!actionTarget) return;
+    try {
+      setIsActionPending(true);
+      setApiError(null);
+      await deleteOrLeaveRoomApi(actionTarget.workspace.id);
+      setWorkspaces((prev) => prev.filter((w) => w.id !== actionTarget.workspace.id));
+      setActionTarget(null);
+    } catch (err) {
+      setApiError(
+        getApiErrorMessage(
+          err,
+          actionTarget.type === 'DELETE' ? 'Failed to delete workspace' : 'Failed to leave workspace'
+        )
+      );
+    } finally {
+      setIsActionPending(false);
+    }
+  };
+
   const handleLogout = async () => {
     await logout();
     navigate('/');
@@ -148,6 +185,7 @@ export default function DashboardPage() {
   ) => {
     try {
       setLaunchingTemplate(template);
+      setApiError(null);
       const room = await createRoomApi({
         name,
         template,
@@ -155,7 +193,7 @@ export default function DashboardPage() {
       });
       navigate(`/rooms/${room.id}`);
     } catch (err) {
-      alert(getApiErrorMessage(err, 'Failed to create workspace'));
+      setApiError(getApiErrorMessage(err, 'Failed to create workspace'));
     } finally {
       setLaunchingTemplate(null);
     }
@@ -253,6 +291,23 @@ export default function DashboardPage() {
 
       {/* Main Content */}
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 z-10 space-y-6 sm:space-y-8">
+        {/* In-App API / Launch Error Alert Banner */}
+        {apiError && (
+          <div className="p-3 text-xs font-medium rounded-xl bg-destructive/10 border border-destructive/20 text-destructive flex items-center justify-between gap-2 animate-in fade-in-0 duration-150">
+            <div className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-destructive shrink-0" />
+              <span>{apiError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setApiError(null)}
+              className="text-xs text-destructive hover:underline cursor-pointer font-mono shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* User Welcome & Action Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/40">
           <div>
@@ -537,8 +592,17 @@ export default function DashboardPage() {
                     : 'Spin up an instant template above or click New Workspace to start coding.'}
                 </p>
               </div>
-              {!searchQuery && (
-                <Button size="sm" onClick={() => setIsModalOpen(true)} className="text-xs gap-1.5">
+              {searchQuery ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSearchQuery('')}
+                  className="text-xs gap-1.5 cursor-pointer"
+                >
+                  <span>Clear Search Filter</span>
+                </Button>
+              ) : (
+                <Button size="sm" onClick={() => setIsModalOpen(true)} className="text-xs gap-1.5 cursor-pointer">
                   <Plus size={14} />
                   <span>Create Workspace</span>
                 </Button>
@@ -576,7 +640,7 @@ export default function DashboardPage() {
                         </button>
                       </div>
                     </div>
-                    <div className="shrink-0">
+                    <div className="shrink-0 flex items-center gap-1.5">
                       <span
                         className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
                           ws.role === 'OWNER'
@@ -586,6 +650,21 @@ export default function DashboardPage() {
                       >
                         {ROLE_LABELS[ws.role] ?? ws.role}
                       </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setActionTarget({
+                            workspace: ws,
+                            type: ws.role === 'OWNER' ? 'DELETE' : 'LEAVE',
+                          });
+                        }}
+                        className="p-1 rounded-md text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                        title={ws.role === 'OWNER' ? 'Delete workspace' : 'Leave workspace'}
+                      >
+                        {ws.role === 'OWNER' ? <Trash2 size={12} /> : <LogOut size={12} />}
+                      </button>
                     </div>
                   </div>
 
@@ -671,9 +750,24 @@ export default function DashboardPage() {
                         {formatRelativeTime(ws.updatedAt)}
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <Button asChild size="sm" variant="ghost" className="h-7 text-xs px-2">
-                          <Link to={`/rooms/${ws.id}`}>Open →</Link>
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button asChild size="sm" variant="ghost" className="h-7 text-xs px-2 cursor-pointer">
+                            <Link to={`/rooms/${ws.id}`}>Open →</Link>
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActionTarget({
+                                workspace: ws,
+                                type: ws.role === 'OWNER' ? 'DELETE' : 'LEAVE',
+                              })
+                            }
+                            className="p-1.5 rounded-md text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                            title={ws.role === 'OWNER' ? 'Delete workspace' : 'Leave workspace'}
+                          >
+                            {ws.role === 'OWNER' ? <Trash2 size={13} /> : <LogOut size={13} />}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -799,6 +893,90 @@ export default function DashboardPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Delete / Leave Workspace Confirmation Modal */}
+      {actionTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in-0 duration-150">
+          <div className="w-full max-w-sm bg-card border border-border/80 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4 animate-in zoom-in-95 fade-in-0 duration-200">
+            <div className="flex items-start gap-3">
+              <div
+                className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  actionTarget.type === 'DELETE'
+                    ? 'bg-destructive/10 text-destructive border border-destructive/20'
+                    : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                }`}
+              >
+                {actionTarget.type === 'DELETE' ? (
+                  <Trash2 size={18} />
+                ) : (
+                  <LogOut size={18} />
+                )}
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-foreground">
+                  {actionTarget.type === 'DELETE' ? 'Delete Workspace' : 'Leave Workspace'}
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {actionTarget.type === 'DELETE' ? (
+                    <>
+                      Are you sure you want to permanently delete{' '}
+                      <strong className="text-foreground font-mono">
+                        {actionTarget.workspace.name}
+                      </strong>
+                      ? All collaborative files, Yjs snapshots, and room history will be removed.
+                    </>
+                  ) : (
+                    <>
+                      Are you sure you want to leave{' '}
+                      <strong className="text-foreground font-mono">
+                        {actionTarget.workspace.name}
+                      </strong>
+                      ? You will need an invite code to rejoin this room.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={isActionPending}
+                onClick={() => setActionTarget(null)}
+                className="text-xs cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant={actionTarget.type === 'DELETE' ? 'destructive' : 'default'}
+                size="sm"
+                disabled={isActionPending}
+                onClick={handleConfirmDeleteOrLeave}
+                className="text-xs gap-1.5 cursor-pointer"
+              >
+                {isActionPending ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" />
+                    <span>{actionTarget.type === 'DELETE' ? 'Deleting...' : 'Leaving...'}</span>
+                  </>
+                ) : actionTarget.type === 'DELETE' ? (
+                  <>
+                    <Trash2 size={12} />
+                    <span>Delete Permanently</span>
+                  </>
+                ) : (
+                  <>
+                    <LogOut size={12} />
+                    <span>Leave Workspace</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       )}

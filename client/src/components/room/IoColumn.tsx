@@ -1,6 +1,9 @@
+import { useState } from 'react';
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
+  Copy,
   FileCode,
   Loader2,
   Maximize2,
@@ -53,6 +56,16 @@ export function IoColumn({
 }: IoColumnProps) {
   const isRightEdge = colIndex === totalColumns - 1;
   const showFolded = isIoFolded && maximizedColumn !== 'io';
+  const [copiedOutput, setCopiedOutput] = useState(false);
+
+  const handleCopyOutput = () => {
+    if (!executionResult) return;
+    const content = [executionResult.stdout, executionResult.stderr].filter(Boolean).join('\n');
+    if (!content) return;
+    navigator.clipboard.writeText(content);
+    setCopiedOutput(true);
+    setTimeout(() => setCopiedOutput(false), 1500);
+  };
 
   return (
     <div
@@ -142,6 +155,17 @@ export function IoColumn({
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
+                {executionResult && (executionResult.stdout || executionResult.stderr) && (
+                  <button
+                    type="button"
+                    onClick={handleCopyOutput}
+                    className="inline-flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground px-1.5 cursor-pointer transition-colors"
+                    title="Copy output to clipboard"
+                  >
+                    {copiedOutput ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                    <span>{copiedOutput ? 'Copied' : 'Copy'}</span>
+                  </button>
+                )}
                 {executionResult && (
                   <button
                     type="button"

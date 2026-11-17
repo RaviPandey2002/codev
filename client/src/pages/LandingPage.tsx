@@ -19,7 +19,7 @@ import {
   ChevronDown,
   ChevronUp,
   Play,
-  PenTool,
+  FileText,
   Share2,
 } from 'lucide-react';
 
@@ -101,7 +101,7 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-sm sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Multi-cursor pair programming, sub-millisecond execution for C++ and Python, interactive canvas sketching, and shared rooms. Zero configuration required.
+            Multi-cursor pair programming, sub-millisecond execution for C++ and Python, shared problem scratchpads, and instant room collaboration. Zero configuration required.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 w-full max-w-xs sm:max-w-none mx-auto">
@@ -256,11 +256,11 @@ export default function LandingPage() {
             {/* Feature 3 */}
             <div className="p-5 rounded-xl border border-border/70 bg-card/60 space-y-2.5 hover:border-primary/40 transition-colors">
               <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                <PenTool size={16} />
+                <FileText size={16} />
               </div>
-              <h3 className="font-semibold text-sm">Interactive Whiteboard</h3>
+              <h3 className="font-semibold text-sm">Shared Problem Scratchpad</h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Sketch architecture diagrams, draw algorithm trees, or take notes alongside your code on a synchronized infinite canvas.
+                Collaborate on problem statements, algorithm constraints, and brainstorm edge cases side-by-side with your code in real-time.
               </p>
             </div>
 

@@ -29,6 +29,20 @@ export function ContextColumn({
   const isLeftEdge = colIndex === 0;
   const showFolded = isContextFolded && maximizedColumn !== 'context';
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const target = e.currentTarget;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      const newValue = problemNotes.substring(0, start) + '  ' + problemNotes.substring(end);
+      onProblemNotesChange(newValue);
+      requestAnimationFrame(() => {
+        target.selectionStart = target.selectionEnd = start + 2;
+      });
+    }
+  };
+
   return (
     <div
       style={{
@@ -114,6 +128,7 @@ export function ContextColumn({
             <textarea
               value={problemNotes}
               onChange={(e) => onProblemNotesChange(e.target.value)}
+              onKeyDown={handleKeyDown}
               disabled={isEffectiveReadOnly}
               placeholder="Paste problem description, examples, or shared algorithm notes here..."
               className="flex-1 w-full resize-none bg-transparent font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none leading-relaxed"
