@@ -62,10 +62,12 @@ int main() {
       return {
         path: 'main.c',
         content: `#include <stdio.h>
+#include <stdlib.h>
 
-// CodeV Online C Compiler
+// CodeV C Systems & Memory Playground
+// Compiled with gcc -O2 -std=c17
 int main() {
-    printf("Hello from CodeV C Compiler!\\n");
+    printf("Hello from CodeV C Systems Playground!\\n");
     return 0;
 }
 `,

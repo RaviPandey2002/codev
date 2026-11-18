@@ -20,6 +20,7 @@ import {
   X,
   FileCode,
   Trash2,
+  Cpu,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -84,8 +85,8 @@ export default function DashboardPage() {
   const modalFirstInputRef = useRef<HTMLInputElement>(null);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
-  const [newRoomSourceType, setNewRoomSourceType] = useState<RoomSourceType>('SCRATCHPAD');
-  const [newRoomTemplate, setNewRoomTemplate] = useState<RoomTemplate>('typescript');
+  const [newRoomSourceType, setNewRoomSourceType] = useState<RoomSourceType>('COMPILER');
+  const [newRoomTemplate, setNewRoomTemplate] = useState<RoomTemplate>('cpp');
   const [newRoomPrivate, setNewRoomPrivate] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createModalError, setCreateModalError] = useState<string | null>(null);
@@ -341,28 +342,6 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-            {/* TypeScript */}
-            <button
-              type="button"
-              disabled={launchingTemplate !== null}
-              onClick={() => handleLaunchTemplate('typescript', 'TypeScript Scratchpad', 'SCRATCHPAD')}
-              className="p-3.5 sm:p-4 rounded-xl border border-border/70 bg-card/40 hover:border-primary/50 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-sm transition-all duration-150 text-left space-y-1 group cursor-pointer disabled:opacity-60"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
-                  TypeScript Scratchpad
-                </span>
-                {launchingTemplate === 'typescript' ? (
-                  <Loader2 size={14} className="text-primary animate-spin" />
-                ) : (
-                  <Code size={14} className="text-primary shrink-0" />
-                )}
-              </div>
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                Pre-configured TypeScript runtime for rapid algorithms and pair coding.
-              </p>
-            </button>
-
             {/* C++ Competitive Arena */}
             <button
               type="button"
@@ -388,7 +367,7 @@ export default function DashboardPage() {
               </p>
             </button>
 
-            {/* Python Runner */}
+            {/* Python 3 Workspace */}
             <button
               type="button"
               disabled={launchingTemplate !== null}
@@ -410,25 +389,50 @@ export default function DashboardPage() {
               </p>
             </button>
 
-            {/* React Sandbox */}
+            {/* TypeScript Scratchpad */}
             <button
               type="button"
               disabled={launchingTemplate !== null}
-              onClick={() => handleLaunchTemplate('react', 'React Sandbox', 'TEMPLATE')}
+              onClick={() => handleLaunchTemplate('typescript', 'TypeScript Scratchpad', 'SCRATCHPAD')}
               className="p-3.5 sm:p-4 rounded-xl border border-border/70 bg-card/40 hover:border-primary/50 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-sm transition-all duration-150 text-left space-y-1 group cursor-pointer disabled:opacity-60"
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
-                  React Prototyper
+                  TypeScript Scratchpad
                 </span>
-                {launchingTemplate === 'react' ? (
+                {launchingTemplate === 'typescript' ? (
                   <Loader2 size={14} className="text-primary animate-spin" />
                 ) : (
-                  <Code2 size={14} className="text-primary shrink-0" />
+                  <Code size={14} className="text-primary shrink-0" />
                 )}
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                JSX prototyping canvas with live peer awareness for component design.
+                Pre-configured TypeScript runtime for rapid algorithms and pair coding.
+              </p>
+            </button>
+
+            {/* C Systems / Online Compiler */}
+            <button
+              type="button"
+              disabled={launchingTemplate !== null}
+              onClick={() => handleLaunchTemplate('c', 'C Systems Playground', 'COMPILER')}
+              className="p-3.5 sm:p-4 rounded-xl border border-border/70 bg-card/40 hover:border-primary/50 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-sm transition-all duration-150 text-left space-y-1 group cursor-pointer disabled:opacity-60"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5">
+                  <span>C Systems Playground</span>
+                  <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 bg-muted text-muted-foreground rounded font-bold">
+                    gcc
+                  </span>
+                </span>
+                {launchingTemplate === 'c' ? (
+                  <Loader2 size={14} className="text-primary animate-spin" />
+                ) : (
+                  <Cpu size={14} className="text-primary shrink-0" />
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                GCC C17 environment for pointers, data structures, and memory management.
               </p>
             </button>
           </div>
@@ -843,18 +847,17 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-foreground">Language / Template</label>
+                  <label className="text-xs font-semibold text-foreground">Language / Runtime</label>
                   <select
                     value={newRoomTemplate}
                     onChange={(e) => setNewRoomTemplate(e.target.value as RoomTemplate)}
                     className="w-full h-9 rounded-lg border border-input bg-background px-3 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
                   >
-                    <option value="typescript">TypeScript (TS)</option>
                     <option value="cpp">C++20 (&lt;bits/stdc++.h&gt;)</option>
-                    <option value="c">C (gcc)</option>
+                    <option value="c">C17 (gcc)</option>
                     <option value="python">Python 3</option>
-                    <option value="react">React (JSX)</option>
-                    <option value="javascript">JavaScript</option>
+                    <option value="typescript">TypeScript (TS)</option>
+                    <option value="javascript">JavaScript (Node.js)</option>
                   </select>
                 </div>
               </div>

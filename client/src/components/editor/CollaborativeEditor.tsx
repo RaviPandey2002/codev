@@ -194,6 +194,9 @@ export function CollaborativeEditor({
     const ytext = ydoc.getText('monaco');
     const model = editor.getModel();
     if (model) {
+      // Force LF line endings to prevent line-offset drift between Monaco and Yjs CRDT
+      model.setEOL(monaco.editor.EndOfLineSequence.LF);
+
       const binding = new MonacoBinding(
         ytext,
         model,
@@ -215,9 +218,26 @@ export function CollaborativeEditor({
       setCode: (newCode: string) => {
         const normalized = newCode.replace(/\r\n/g, '\n');
         const currentDoc = ydocRef.current;
+        const currentEditor = editorRef.current;
+
         if (currentDoc) {
           const sharedText = currentDoc.getText('monaco');
           if (sharedText.toString() !== normalized) {
+            // Reset cursor to top (1,1) so stale relative positions from the previous
+            // language buffer don't get restored into the middle of keywords in the new buffer
+            if (currentEditor) {
+              try {
+                currentEditor.setSelection({
+                  startLineNumber: 1,
+                  startColumn: 1,
+                  endLineNumber: 1,
+                  endColumn: 1,
+                });
+              } catch {
+                // Ignore if editor is unmounted
+              }
+            }
+
             currentDoc.transact(() => {
               sharedText.delete(0, sharedText.length);
               sharedText.insert(0, normalized);
@@ -226,7 +246,7 @@ export function CollaborativeEditor({
           return;
         }
 
-        const currentModel = editorRef.current?.getModel();
+        const currentModel = currentEditor?.getModel();
         if (currentModel && currentModel.getValue() !== normalized) {
           currentModel.setValue(normalized);
         }
@@ -340,6 +360,7 @@ export function CollaborativeEditor({
           lineNumbers: 'on',
           renderLineHighlight: 'all',
           padding: { top: 12, bottom: 12 },
+          dragAndDrop: false,
         }}
       />
     </div>
