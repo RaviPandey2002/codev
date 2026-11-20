@@ -25,6 +25,12 @@ export const roomSourceEnum = pgEnum('room_source', [
   'TEMPLATE',
 ]);
 
+export const arenaPlatformEnum = pgEnum('arena_platform', [
+  'CODEFORCES',
+  'LEETCODE',
+  'STANDARD_IO',
+]);
+
 export const roomRoleEnum = pgEnum('room_role', ['OWNER', 'EDITOR', 'VIEWER']);
 
 export const users = pgTable(
@@ -44,6 +50,7 @@ export const rooms = pgTable('rooms', {
   name: varchar('name', { length: 100 }).notNull(),
   description: text('description'),
   sourceType: roomSourceEnum('source_type').default('SCRATCHPAD').notNull(),
+  arenaPlatform: arenaPlatformEnum('arena_platform'),
   githubRepo: varchar('github_repo', { length: 255 }),
   githubBranch: varchar('github_branch', { length: 100 }),
   isPrivate: boolean('is_private').default(false).notNull(),

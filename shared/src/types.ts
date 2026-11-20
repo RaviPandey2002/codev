@@ -1,4 +1,4 @@
-import type { RoomRole, RoomSourceType } from './schemas/rooms';
+import type { ArenaPlatform, RoomRole, RoomSourceType } from './schemas/rooms';
 
 // WebSocket message shapes — used by both client and server
 export type WSMessage =
@@ -24,6 +24,8 @@ export type RoomDTO = {
   isPrivate: boolean;
   ownerId: string;
   role: RoomRole;
+  /** Platform specialization for COMPILER (CP Arena) rooms. */
+  arenaPlatform: ArenaPlatform | null;
   peersCount?: number;
   filesCount?: number;
   createdAt: string;
@@ -47,4 +49,35 @@ export type RoomFileDTO = {
   path: string;
   content: string;
   updatedAt: string;
+};
+
+export type TestCase = {
+  input: string;
+  output?: string;
+};
+
+export type TestCaseItem = {
+  id: string;
+  name?: string;
+  input: string;
+  output: string;
+};
+
+// Competitive Programming Problem Data DTO
+export type ProblemData = {
+  title: string;
+  platform: ArenaPlatform;
+  url?: string;
+  contestId?: number;
+  index?: string;
+  timeLimit?: string;
+  memoryLimit?: string;
+  difficulty?: string;
+  tags?: string[];
+  description?: string;
+  inputSpecification?: string;
+  outputSpecification?: string;
+  sampleInput?: string;
+  sampleOutput?: string;
+  sampleCases?: TestCase[];
 };

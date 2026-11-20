@@ -215,7 +215,10 @@ function runProcess(
     });
 
     if (stdinInput) {
-      child.stdin.write(stdinInput);
+      // Normalize Windows CRLF to LF and ensure stdin ends with newline,
+      // preventing EOF truncation and trailing \r issues in C++ getline / cin
+      const normalizedStdin = stdinInput.replace(/\r\n/g, '\n');
+      child.stdin.write(normalizedStdin.endsWith('\n') ? normalizedStdin : normalizedStdin + '\n');
     }
     child.stdin.end();
 

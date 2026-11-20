@@ -5,6 +5,7 @@ import { AppError } from '../utils/errors';
 import { generateRoomId } from '../utils/id';
 import { roomHub } from '../websocket/room_hub';
 import type {
+  ArenaPlatform,
   RoomDTO,
   RoomFileDTO,
   RoomMemberDTO,
@@ -22,6 +23,7 @@ interface CreateRoomParams {
   isPrivate?: boolean;
   githubRepo?: string;
   githubBranch?: string;
+  arenaPlatform?: ArenaPlatform;
 }
 
 interface SeedConfig {
@@ -43,15 +45,21 @@ function getTemplateSeed(template: RoomTemplate = 'typescript', sourceType: Room
 using namespace std;
 
 // CodeV Competitive Programming Arena
-// Fast I/O for competitive programming
+// Fast I/O template for Codeforces & competitive programming
+
+void solve() {
+    // Solve each testcase here
+}
+
 int main() {
     ios_base::sync_with_stdio(false);
     cin.tie(NULL);
 
     int t = 1;
-    // cin >> t; // Uncomment for multi-testcase problems
-    while (t--) {
-        cout << "Hello from CodeV Competitive Arena!\\n";
+    if (cin >> t) {
+        while (t--) {
+            solve();
+        }
     }
     return 0;
 }
@@ -143,9 +151,12 @@ export async function createRoom({
   isPrivate = false,
   githubRepo,
   githubBranch,
+  arenaPlatform,
 }: CreateRoomParams): Promise<RoomDTO> {
   const roomId = generateRoomId();
   const seed = getTemplateSeed(template, sourceType);
+  const effectiveArenaPlatform: ArenaPlatform | null =
+    sourceType === 'COMPILER' ? (arenaPlatform || 'CODEFORCES') : null;
 
   const [newRoom] = await db.transaction(async (tx) => {
     // 1. Insert room record
@@ -156,6 +167,7 @@ export async function createRoom({
         name,
         description: description || null,
         sourceType,
+        arenaPlatform: effectiveArenaPlatform,
         githubRepo: githubRepo || null,
         githubBranch: githubBranch || null,
         isPrivate,
@@ -185,6 +197,7 @@ export async function createRoom({
     name: newRoom.name,
     description: newRoom.description,
     sourceType: newRoom.sourceType as RoomSourceType,
+    arenaPlatform: (newRoom.arenaPlatform as ArenaPlatform) || null,
     githubRepo: newRoom.githubRepo,
     githubBranch: newRoom.githubBranch,
     isPrivate: newRoom.isPrivate,
@@ -213,6 +226,7 @@ export async function listUserRooms(userId: string): Promise<RoomDTO[]> {
     name: room.name,
     description: room.description,
     sourceType: room.sourceType as RoomSourceType,
+    arenaPlatform: (room.arenaPlatform as ArenaPlatform) || null,
     githubRepo: room.githubRepo,
     githubBranch: room.githubBranch,
     isPrivate: room.isPrivate,
@@ -254,6 +268,7 @@ export async function getRoomDetails(
     name: roomRecord.name,
     description: roomRecord.description,
     sourceType: roomRecord.sourceType as RoomSourceType,
+    arenaPlatform: (roomRecord.arenaPlatform as ArenaPlatform) || null,
     githubRepo: roomRecord.githubRepo,
     githubBranch: roomRecord.githubBranch,
     isPrivate: roomRecord.isPrivate,
@@ -316,6 +331,7 @@ export async function joinRoom(roomId: string, userId: string): Promise<RoomDTO>
     name: roomRecord.name,
     description: roomRecord.description,
     sourceType: roomRecord.sourceType as RoomSourceType,
+    arenaPlatform: (roomRecord.arenaPlatform as ArenaPlatform) || null,
     githubRepo: roomRecord.githubRepo,
     githubBranch: roomRecord.githubBranch,
     isPrivate: roomRecord.isPrivate,

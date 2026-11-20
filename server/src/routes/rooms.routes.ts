@@ -52,6 +52,7 @@ export default async function roomRoutes(app: FastifyInstance) {
         isPrivate: input.isPrivate,
         githubRepo: input.githubRepo,
         githubBranch: input.githubBranch,
+        arenaPlatform: input.arenaPlatform,
       });
 
       return reply.status(201).send({ room });

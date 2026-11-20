@@ -16,6 +16,10 @@ export const roomTemplateSchema = z.enum([
 ]);
 export type RoomTemplate = z.infer<typeof roomTemplateSchema>;
 
+/** Which competitive programming platform a CP Arena room is configured for. */
+export const arenaPlatformSchema = z.enum(['CODEFORCES', 'LEETCODE', 'STANDARD_IO']);
+export type ArenaPlatform = z.infer<typeof arenaPlatformSchema>;
+
 export const createRoomSchema = z.object({
   name: z
     .string()
@@ -28,6 +32,8 @@ export const createRoomSchema = z.object({
   isPrivate: z.boolean().optional().default(false),
   githubRepo: z.string().trim().max(255).optional(),
   githubBranch: z.string().trim().max(100).optional(),
+  /** Only meaningful when sourceType === 'COMPILER'. Defaults to CODEFORCES. */
+  arenaPlatform: arenaPlatformSchema.optional().default('CODEFORCES'),
 });
 
 export type CreateRoomInput = z.input<typeof createRoomSchema>;
@@ -56,3 +62,10 @@ export const inviteMemberSchema = z.object({
 
 export type InviteMemberInput = z.input<typeof inviteMemberSchema>;
 export type InviteMemberOutput = z.output<typeof inviteMemberSchema>;
+
+export const importProblemSchema = z.object({
+  urlOrId: z.string().trim().min(1, 'Problem URL or ID is required').max(500),
+  platform: arenaPlatformSchema.optional(),
+});
+
+export type ImportProblemInput = z.infer<typeof importProblemSchema>;

@@ -29,7 +29,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuthStore } from '@/stores/auth.store';
 import { listRoomsApi, createRoomApi, joinRoomApi, deleteOrLeaveRoomApi } from '@/api/rooms';
 import { getApiErrorMessage } from '@/lib/api';
-import type { RoomDTO, RoomTemplate, RoomSourceType } from '@codev/shared';
+import type { RoomDTO, RoomTemplate, RoomSourceType, ArenaPlatform } from '@codev/shared';
 
 function formatRelativeTime(dateString: string): string {
   try {
@@ -87,6 +87,7 @@ export default function DashboardPage() {
   const [newRoomDesc, setNewRoomDesc] = useState('');
   const [newRoomSourceType, setNewRoomSourceType] = useState<RoomSourceType>('COMPILER');
   const [newRoomTemplate, setNewRoomTemplate] = useState<RoomTemplate>('cpp');
+  const [newRoomArenaPlatform, setNewRoomArenaPlatform] = useState<ArenaPlatform>('CODEFORCES');
   const [newRoomPrivate, setNewRoomPrivate] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createModalError, setCreateModalError] = useState<string | null>(null);
@@ -182,7 +183,8 @@ export default function DashboardPage() {
   const handleLaunchTemplate = async (
     template: RoomTemplate,
     name: string,
-    sourceType: RoomSourceType = 'SCRATCHPAD'
+    sourceType: RoomSourceType = 'SCRATCHPAD',
+    arenaPlatform?: ArenaPlatform
   ) => {
     try {
       setLaunchingTemplate(template);
@@ -191,6 +193,7 @@ export default function DashboardPage() {
         name,
         template,
         sourceType,
+        arenaPlatform: sourceType === 'COMPILER' ? (arenaPlatform || 'CODEFORCES') : undefined,
       });
       navigate(`/rooms/${room.id}`);
     } catch (err) {
@@ -214,6 +217,7 @@ export default function DashboardPage() {
         sourceType: newRoomSourceType,
         template: newRoomTemplate,
         isPrivate: newRoomPrivate,
+        arenaPlatform: newRoomSourceType === 'COMPILER' ? newRoomArenaPlatform : undefined,
       });
       setIsModalOpen(false);
       navigate(`/rooms/${room.id}`);
@@ -861,6 +865,39 @@ export default function DashboardPage() {
                   </select>
                 </div>
               </div>
+
+              {/* CP Arena Platform Sub-selector — only shown for COMPILER mode */}
+              {newRoomSourceType === 'COMPILER' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Terminal size={12} className="text-primary" />
+                    Arena Platform
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(
+                      [
+                        { value: 'CODEFORCES', label: 'Codeforces', desc: 'Stream I/O, multi-testcase' },
+                        { value: 'LEETCODE', label: 'LeetCode', desc: 'Function args, test tabs' },
+                        { value: 'STANDARD_IO', label: 'Standard I/O', desc: 'AtCoder, CSES, CodeChef' },
+                      ] as const
+                    ).map(({ value, label, desc }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setNewRoomArenaPlatform(value)}
+                        className={`p-2.5 rounded-lg border text-left transition-all duration-150 cursor-pointer ${
+                          newRoomArenaPlatform === value
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border/70 bg-background/50 text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                        }`}
+                      >
+                        <div className="text-[11px] font-semibold leading-tight">{label}</div>
+                        <div className="text-[10px] font-mono mt-0.5 leading-tight opacity-70">{desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center gap-2 pt-1">
                 <input

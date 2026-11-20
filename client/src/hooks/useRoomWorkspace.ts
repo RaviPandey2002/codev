@@ -10,7 +10,7 @@ import {
   loadSavedTemplates,
 } from '@/components/room/room.constants';
 import { getApiErrorMessage } from '@/lib/api';
-import type { ExecutionLanguage, ExecutionResult } from '@codev/shared';
+import type { ExecutionLanguage, ExecutionResult, ProblemData, TestCaseItem } from '@codev/shared';
 
 interface UseRoomWorkspaceParams {
   username?: string;
@@ -33,7 +33,25 @@ export function useRoomWorkspace({
   const stdinRef = useRef('');
   stdinRef.current = stdin;
 
+  const [expectedOutput, setExpectedOutput] = useState('');
+  const expectedOutputRef = useRef('');
+  expectedOutputRef.current = expectedOutput;
+
+  // Multi-testcase state for CP / LeetCode modes
+  const [testCases, setTestCases] = useState<TestCaseItem[]>([
+    { id: '1', name: 'Case 1', input: '', output: '' },
+  ]);
+  const [activeCaseIndex, setActiveCaseIndex] = useState(0);
+  const testCasesRef = useRef(testCases);
+  testCasesRef.current = testCases;
+  const activeCaseIndexRef = useRef(activeCaseIndex);
+  activeCaseIndexRef.current = activeCaseIndex;
+
+  // Per-case execution results map (case index -> ExecutionResult)
+  const [caseResults, setCaseResults] = useState<Record<number, ExecutionResult>>({});
+
   const [problemNotes, setProblemNotes] = useState(DEFAULT_PROBLEM_NOTES);
+  const [problemData, setProblemData] = useState<ProblemData | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [runningBy, setRunningBy] = useState<string | null>(null);
   const [executionResult, setExecutionResult] = useState<ExecutionResult | null>(null);
@@ -46,6 +64,7 @@ export function useRoomWorkspace({
   const [savedTemplateFlash, setSavedTemplateFlash] = useState(false);
 
   const stdinSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const expectedOutputSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notesSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runningWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -96,14 +115,36 @@ export function useRoomWorkspace({
         setLanguage(syncedLang);
       }
 
-      const syncedStdin = meta.get('stdin') as string | undefined;
-      if (typeof syncedStdin === 'string') {
-        setStdin(syncedStdin);
+      const syncedCases = meta.get('testCases') as TestCaseItem[] | undefined;
+      if (Array.isArray(syncedCases) && syncedCases.length > 0) {
+        setTestCases(syncedCases);
+        // Refresh local stdin & expectedOutput from the user's currently viewed testcase
+        const curIdx = Math.min(activeCaseIndexRef.current, syncedCases.length - 1);
+        if (syncedCases[curIdx]) {
+          setStdin(syncedCases[curIdx].input);
+          setExpectedOutput(syncedCases[curIdx].output);
+          stdinRef.current = syncedCases[curIdx].input;
+          expectedOutputRef.current = syncedCases[curIdx].output;
+        }
+      } else {
+        const syncedStdin = meta.get('stdin') as string | undefined;
+        if (typeof syncedStdin === 'string') {
+          setStdin(syncedStdin);
+        }
+        const syncedExpected = meta.get('expectedOutput') as string | undefined;
+        if (typeof syncedExpected === 'string') {
+          setExpectedOutput(syncedExpected);
+        }
       }
 
       const syncedNotes = meta.get('problemNotes') as string | undefined;
       if (typeof syncedNotes === 'string') {
         setProblemNotes(syncedNotes);
+      }
+
+      const syncedProblem = meta.get('problemData') as ProblemData | null | undefined;
+      if (syncedProblem !== undefined) {
+        setProblemData(syncedProblem);
       }
 
       const syncedRunning = Boolean(meta.get('isRunning'));
@@ -145,9 +186,21 @@ export function useRoomWorkspace({
         setRunningBy(null);
       }
 
-      const syncedResult = meta.get('executionResult') as ExecutionResult | null | undefined;
+      const syncedResult = meta.get('executionResult') as
+        | (ExecutionResult & { caseIndex?: number })
+        | null
+        | undefined;
       if (syncedResult !== undefined) {
         setExecutionResult(syncedResult);
+        if (syncedResult) {
+          const resIdx =
+            typeof syncedResult.caseIndex === 'number'
+              ? syncedResult.caseIndex
+              : activeCaseIndexRef.current;
+          setCaseResults((prev) => ({ ...prev, [resIdx]: syncedResult }));
+        } else {
+          setCaseResults({});
+        }
       }
     };
 
@@ -266,10 +319,122 @@ export function useRoomWorkspace({
   const handleStdinChange = useCallback((val: string) => {
     stdinRef.current = val;
     setStdin(val);
+    const curIdx = activeCaseIndexRef.current;
+    setTestCases((prev) => {
+      const next = [...prev];
+      if (next[curIdx]) {
+        next[curIdx] = { ...next[curIdx], input: val };
+      }
+      return next;
+    });
     if (stdinSyncTimerRef.current) clearTimeout(stdinSyncTimerRef.current);
     stdinSyncTimerRef.current = setTimeout(() => {
+      const updatedCases = [...testCasesRef.current];
+      if (updatedCases[curIdx]) {
+        updatedCases[curIdx] = { ...updatedCases[curIdx], input: val };
+      }
+      ydocRef.current?.getMap('workspaceMeta').set('testCases', updatedCases);
       ydocRef.current?.getMap('workspaceMeta').set('stdin', val);
     }, 200);
+  }, []);
+
+  const handleExpectedOutputChange = useCallback((val: string) => {
+    expectedOutputRef.current = val;
+    setExpectedOutput(val);
+    const curIdx = activeCaseIndexRef.current;
+    setTestCases((prev) => {
+      const next = [...prev];
+      if (next[curIdx]) {
+        next[curIdx] = { ...next[curIdx], output: val };
+      }
+      return next;
+    });
+    if (expectedOutputSyncTimerRef.current) clearTimeout(expectedOutputSyncTimerRef.current);
+    expectedOutputSyncTimerRef.current = setTimeout(() => {
+      const updatedCases = [...testCasesRef.current];
+      if (updatedCases[curIdx]) {
+        updatedCases[curIdx] = { ...updatedCases[curIdx], output: val };
+      }
+      ydocRef.current?.getMap('workspaceMeta').set('testCases', updatedCases);
+      ydocRef.current?.getMap('workspaceMeta').set('expectedOutput', val);
+    }, 200);
+  }, []);
+
+  const handleSelectCase = useCallback((idx: number) => {
+    const cases = testCasesRef.current;
+    if (idx < 0 || idx >= cases.length) return;
+    setActiveCaseIndex(idx);
+    activeCaseIndexRef.current = idx;
+    const c = cases[idx];
+    setStdin(c.input);
+    setExpectedOutput(c.output);
+    stdinRef.current = c.input;
+    expectedOutputRef.current = c.output;
+    // NOTE: Do not sync activeCaseIndex to Yjs: tab switching is local per peer
+  }, []);
+
+  const handleAddCase = useCallback(() => {
+    const cur = testCasesRef.current;
+    const newIdx = cur.length;
+    const newCase: TestCaseItem = {
+      id: String(Date.now()),
+      name: `Case ${newIdx + 1}`,
+      input: '',
+      output: '',
+    };
+    const updated = [...cur, newCase];
+    setTestCases(updated);
+    setActiveCaseIndex(newIdx);
+    activeCaseIndexRef.current = newIdx;
+    setStdin('');
+    setExpectedOutput('');
+    stdinRef.current = '';
+    expectedOutputRef.current = '';
+    ydocRef.current?.getMap('workspaceMeta').set('testCases', updated);
+  }, []);
+
+  const handleRemoveCase = useCallback((idx: number) => {
+    const cur = testCasesRef.current;
+    if (cur.length <= 1) return;
+    const updated = cur.filter((_, i) => i !== idx).map((c, i) => ({
+      ...c,
+      name: `Case ${i + 1}`,
+    }));
+    setTestCases(updated);
+    const nextIdx = Math.max(0, Math.min(activeCaseIndexRef.current, updated.length - 1));
+    setActiveCaseIndex(nextIdx);
+    activeCaseIndexRef.current = nextIdx;
+    const activeCase = updated[nextIdx];
+    setStdin(activeCase.input);
+    setExpectedOutput(activeCase.output);
+    stdinRef.current = activeCase.input;
+    expectedOutputRef.current = activeCase.output;
+    // Clean up results for removed case
+    setCaseResults((prev) => {
+      const next = { ...prev };
+      delete next[idx];
+      return next;
+    });
+    ydocRef.current?.getMap('workspaceMeta').set('testCases', updated);
+  }, []);
+
+  const handleLoadAllCases = useCallback((cases: Array<{ input: string; output?: string }>) => {
+    if (!cases || cases.length === 0) return;
+    const loaded: TestCaseItem[] = cases.map((c, i) => ({
+      id: String(i + 1),
+      name: `Case ${i + 1}`,
+      input: c.input,
+      output: c.output || '',
+    }));
+    setTestCases(loaded);
+    setActiveCaseIndex(0);
+    activeCaseIndexRef.current = 0;
+    setStdin(loaded[0].input);
+    setExpectedOutput(loaded[0].output);
+    stdinRef.current = loaded[0].input;
+    expectedOutputRef.current = loaded[0].output;
+    setCaseResults({});
+    ydocRef.current?.getMap('workspaceMeta').set('testCases', loaded);
   }, []);
 
   const handleProblemNotesChange = useCallback((val: string) => {
@@ -280,7 +445,18 @@ export function useRoomWorkspace({
     }, 250);
   }, []);
 
+  const handleProblemDataChange = useCallback((data: ProblemData | null) => {
+    setProblemData(data);
+    ydocRef.current?.getMap('workspaceMeta').set('problemData', data);
+  }, []);
+
   const handleClearOutput = useCallback(() => {
+    const curIdx = activeCaseIndexRef.current;
+    setCaseResults((prev) => {
+      const next = { ...prev };
+      delete next[curIdx];
+      return next;
+    });
     setExecutionResult(null);
     ydocRef.current?.getMap('workspaceMeta').set('executionResult', null);
   }, []);
@@ -334,14 +510,26 @@ export function useRoomWorkspace({
         stdin: currentStdin,
       });
 
+      const curCaseIdx = activeCaseIndexRef.current;
+      const resultWithCase = {
+        ...result,
+        caseIndex: curCaseIdx,
+      };
+      setExecutionResult(resultWithCase);
+      setCaseResults((prev) => ({
+        ...prev,
+        [curCaseIdx]: resultWithCase,
+      }));
+
       doc.transact(() => {
         meta.set('isRunning', false);
         meta.set('runningBy', null);
         meta.delete('runStartedAt');
-        meta.set('executionResult', result);
+        meta.set('executionResult', resultWithCase);
       });
     } catch (err) {
-      const fallbackError: ExecutionResult = {
+      const curCaseIdx = activeCaseIndexRef.current;
+      const fallbackError: ExecutionResult & { caseIndex?: number } = {
         stdout: '',
         stderr: getApiErrorMessage(err, 'Execution request failed.'),
         exitCode: 1,
@@ -349,7 +537,13 @@ export function useRoomWorkspace({
         status: 'RUNTIME_ERROR',
         triggeredBy: username || 'Peer',
         timestamp: new Date().toISOString(),
+        caseIndex: curCaseIdx,
       };
+      setExecutionResult(fallbackError);
+      setCaseResults((prev) => ({
+        ...prev,
+        [curCaseIdx]: fallbackError,
+      }));
       doc.transact(() => {
         meta.set('isRunning', false);
         meta.set('runningBy', null);
@@ -372,7 +566,12 @@ export function useRoomWorkspace({
     language,
     setLanguage,
     stdin,
+    expectedOutput,
+    testCases,
+    activeCaseIndex,
+    caseResults,
     problemNotes,
+    problemData,
     isRunning,
     runningBy,
     executionResult,
@@ -386,7 +585,13 @@ export function useRoomWorkspace({
     handleSaveCustomTemplate,
     handleClearCustomTemplate,
     handleStdinChange,
+    handleExpectedOutputChange,
+    handleSelectCase,
+    handleAddCase,
+    handleRemoveCase,
+    handleLoadAllCases,
     handleProblemNotesChange,
+    handleProblemDataChange,
     handleClearOutput,
     handleFormatCode,
     handleRunCode,

@@ -62,7 +62,12 @@ export default function RoomPage() {
     language,
     setLanguage,
     stdin,
+    expectedOutput,
+    testCases,
+    activeCaseIndex,
+    caseResults,
     problemNotes,
+    problemData,
     isRunning,
     runningBy,
     executionResult,
@@ -76,7 +81,13 @@ export default function RoomPage() {
     handleSaveCustomTemplate,
     handleClearCustomTemplate,
     handleStdinChange,
+    handleExpectedOutputChange,
+    handleSelectCase,
+    handleAddCase,
+    handleRemoveCase,
+    handleLoadAllCases,
     handleProblemNotesChange,
+    handleProblemDataChange,
     handleClearOutput,
     handleFormatCode,
     handleRunCode,
@@ -123,6 +134,11 @@ export default function RoomPage() {
     navigator.clipboard.writeText(window.location.href);
     setCopiedId(true);
     setTimeout(() => setCopiedId(false), 1500);
+  };
+
+  const handleLoadSampleCase = (sampleIn: string, sampleOut: string) => {
+    handleStdinChange(sampleIn);
+    handleExpectedOutputChange(sampleOut);
   };
 
   if (isLoading) {
@@ -199,7 +215,7 @@ export default function RoomPage() {
         onPointerDown={(e) => startColumnResize(e, leftCol, rightCol)}
         onDoubleClick={resetColumnWidths}
         title="Drag to resize columns (double-click to reset)"
-        className="group w-2 shrink-0 flex items-center justify-center cursor-col-resize select-none hover:bg-primary/20 active:bg-primary/40 transition-colors"
+        className="group w-2.5 -mx-0.5 shrink-0 flex items-center justify-center cursor-col-resize select-none relative z-10 hover:bg-primary/20 active:bg-primary/40 transition-colors"
       >
         <div className="w-0.5 h-8 rounded-full bg-border/80 group-hover:bg-primary transition-colors" />
       </div>
@@ -265,6 +281,11 @@ export default function RoomPage() {
             isEffectiveReadOnly={isEffectiveReadOnly}
             problemNotes={problemNotes}
             onProblemNotesChange={handleProblemNotesChange}
+            arenaPlatform={room.sourceType === 'COMPILER' ? (room.arenaPlatform || 'CODEFORCES') : null}
+            problemData={problemData}
+            onProblemDataChange={handleProblemDataChange}
+            onLoadSampleCase={handleLoadSampleCase}
+            onLoadAllCases={handleLoadAllCases}
           />
 
           <EditorColumn
@@ -312,7 +333,16 @@ export default function RoomPage() {
             onClearOutput={handleClearOutput}
             stdin={stdin}
             onStdinChange={handleStdinChange}
+            expectedOutput={expectedOutput}
+            onExpectedOutputChange={handleExpectedOutputChange}
             isEffectiveReadOnly={isEffectiveReadOnly}
+            arenaPlatform={room.sourceType === 'COMPILER' ? (room.arenaPlatform || 'CODEFORCES') : null}
+            testCases={testCases}
+            activeCaseIndex={activeCaseIndex}
+            caseResults={caseResults}
+            onSelectCase={handleSelectCase}
+            onAddCase={handleAddCase}
+            onRemoveCase={handleRemoveCase}
           />
 
           {renderGutterBetween(0)}

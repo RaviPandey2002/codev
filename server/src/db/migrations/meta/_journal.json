@@ -29,6 +29,13 @@
       "when": 1789895696687,
       "tag": "0003_ambiguous_miek",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795141864266,
+      "tag": "0004_harsh_bug",
+      "breakpoints": true
     }
   ]
 }

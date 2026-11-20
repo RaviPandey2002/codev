@@ -6,6 +6,7 @@ import helmet from '@fastify/helmet'
 import authRoutes from './routes/auth.routes.js';
 import roomRoutes from './routes/rooms.routes.js';
 import executionRoutes from './routes/execution.routes.js';
+import problemRoutes from './routes/problems.routes.js';
 import { AppError } from './utils/errors.js';
 import { ZodError } from 'zod';
 import fastifyWebsocket from '@fastify/websocket';
@@ -54,6 +55,7 @@ app.get('/health', async () => {
 app.register(authRoutes, { prefix: "/auth" });
 app.register(roomRoutes, { prefix: "/rooms" });
 app.register(executionRoutes, { prefix: "/execute" });
+app.register(problemRoutes, { prefix: "/problems" });
 
 
 app.setErrorHandler((error, req, reply) => {
