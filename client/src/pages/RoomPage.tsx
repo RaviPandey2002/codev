@@ -364,6 +364,7 @@ export default function RoomPage() {
             onAddCase={handleAddCase}
             onRemoveCase={handleRemoveCase}
             onRunAllCases={handleRunAllCases}
+            onRunCode={handleRunCode}
           />
 
           {renderGutterBetween(0)}

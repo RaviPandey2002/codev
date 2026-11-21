@@ -9,17 +9,18 @@ Load this at the start of every new Codev session so nothing needs to be re-expl
 
 ---
 
-## Project Repositories & Knowledge Base
+## The Two Folders
 
-**Codev Monorepo (`codev/`)**
-- The primary GitHub project repository — all application code is written and deployed from here
-- Production-grade collaborative editor and competitive programming arena built from scratch
-- Managed via `pnpm` workspaces (monorepo)
-- GitHub Remote: `https://github.com/RaviPandey2002/codev.git`
+**`/home/jarvis/Projects/GitHub/codev`**
+- The GitHub project repo — this is where all code is written and pushed
+- Personal portfolio project, built from scratch
+- Uses pnpm workspaces (monorepo)
+- GitHub remote: https://github.com/RaviPandey2002/codev.git
 
-**Engineering Knowledge Base & Revision Vault (`antigravity-notes/codev/`)**
-- Architecture decision records (ADRs), system design documents, weekly digests, and concepts
-- Serves as the reference vault for architectural rationale and deep technical mastery
+**`/home/jarvis/Projects/GitHub/Notes/antigravity-notes/codev`**
+- The engineering knowledge base and revision vault
+- Contains all architectural decisions, docs, weekly digests, and concepts
+- Read from here, write code to `codev/`
 
 ---
 
@@ -67,3 +68,10 @@ codev/
 ├── docs/             → SYSTEM_DESIGN, API_CONTRACT, DATA_MODEL, ARCHITECTURE_DECISIONS
 └── package.json      → Root pnpm workspace coordinator
 ```
+
+---
+
+## Strict Git Rule
+- **NEVER run `git commit` or `git push` autonomously.**
+- All changes must be left uncommitted in the working tree for the user to review with `git status` and `git diff`.
+- Always provide a recommended conventional commit message in the response for the user to commit and push on their own.

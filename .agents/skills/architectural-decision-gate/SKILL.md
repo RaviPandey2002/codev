@@ -66,4 +66,5 @@ Only **after** the user approves the architectural decision:
 1. Freeze interface contracts in `@codev/shared` (types and schemas).
 2. Unleash the autonomous implementers and test automators.
 3. Let the agents handle syntax, typing, and self-healing test cycles autonomously without interrupting the user.
-4. Conclude the cycle with a clean, concise walkthrough linking back to the documented architectural decision.
+4. **STRICT GIT RULE**: **NEVER run `git commit` or `git push` autonomously.** Always leave verified changes uncommitted in the working tree so the user can inspect diffs and commit themselves. Always provide a recommended conventional commit message in your final response.
+5. Conclude the cycle with a clean, concise walkthrough linking back to the documented architectural decision.

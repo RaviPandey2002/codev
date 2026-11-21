@@ -890,10 +890,30 @@ export function useRoomWorkspace({
 
       setCaseResults(results);
       const curIdx = activeCaseIndexRef.current;
-      if (results[curIdx]) {
-        setExecutionResult(results[curIdx]);
+
+      // Auto-focus on first failing case to immediately display mismatch diff
+      let focusIdx = curIdx;
+      for (let i = 0; i < cases.length; i++) {
+        const r = results[i];
+        const tc = cases[i];
+        if (!r || r.status !== 'SUCCESS') {
+          focusIdx = i;
+          break;
+        }
+        if (tc.output && tc.output.trim().length > 0) {
+          const v = computeVerdict(r.stdout, tc.output);
+          if (v !== 'ACCEPTED') {
+            focusIdx = i;
+            break;
+          }
+        }
+      }
+
+      handleSelectCase(focusIdx);
+      if (results[focusIdx]) {
+        setExecutionResult(results[focusIdx]);
         doc.transact(() => {
-          meta.set('executionResult', results[curIdx]);
+          meta.set('executionResult', results[focusIdx]);
         });
       }
 
