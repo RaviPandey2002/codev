@@ -61,6 +61,15 @@ export function computeVerdict(actual: string, expected: string): Verdict {
     return 'ACCEPTED';
   }
 
+  // Floating-point equivalence: e.g. 1024 vs 1024.00000
+  const numActual = Number(normActual);
+  const numExpected = Number(normExpected);
+  if (!isNaN(numActual) && !isNaN(numExpected) && normActual.length > 0 && normExpected.length > 0) {
+    if (Math.abs(numActual - numExpected) < 1e-5) {
+      return 'ACCEPTED';
+    }
+  }
+
   // Flexible array comparison: match [0, 1] with 0 1 or [0,1]
   const strip = (s: string) =>
     s
@@ -318,8 +327,9 @@ export function IoColumn({
 
   const verdict = useMemo<Verdict>(() => {
     if (!isCodeforcesMode || !activeCaseResult) return null;
-    return computeVerdict(actualOutput, expectedOutput);
-  }, [isCodeforcesMode, activeCaseResult, actualOutput, expectedOutput]);
+    if (activeCaseResult.status !== 'SUCCESS') return null;
+    return computeVerdict(activeCaseResult.stdout, expectedOutput);
+  }, [isCodeforcesMode, activeCaseResult, expectedOutput]);
 
   // ── Folded rail ──────────────────────────────────────────────────────────
   if (showFolded) {
@@ -411,7 +421,8 @@ export function IoColumn({
             {testCases.map((tc, idx) => {
               const isActive = idx === (activeCaseIndex ?? 0);
               const tcResult = caseResults?.[idx];
-              const tcVerdict = tcResult ? computeVerdict(tcResult.stdout, tc.output) : null;
+              const tcVerdict =
+                tcResult && tcResult.status === 'SUCCESS' ? computeVerdict(tcResult.stdout, tc.output) : null;
               return (
                 <div
                   key={tc.id || idx}

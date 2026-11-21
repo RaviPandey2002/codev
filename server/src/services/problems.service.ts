@@ -10,6 +10,7 @@ interface LeetCodeGraphQLResponse {
       difficulty: string;
       exampleTestcaseList?: string[];
       topicTags?: Array<{ name: string }>;
+      codeSnippets?: Array<{ lang: string; langSlug: string; code: string }>;
     } | null;
   };
   errors?: Array<{ message: string }>;
@@ -64,6 +65,11 @@ export async function importProblem(input: ImportProblemInput): Promise<ProblemD
               difficulty
               exampleTestcaseList
               topicTags { name }
+              codeSnippets {
+                lang
+                langSlug
+                code
+              }
             }
           }`,
           variables: { titleSlug: slug },
@@ -88,7 +94,7 @@ export async function importProblem(input: ImportProblemInput): Promise<ProblemD
       const cleanDesc = q.content || '';
       const rawInputs = q.exampleTestcaseList || [];
       const extractedOutputs = [
-        ...cleanDesc.matchAll(/<strong>Output:<\/strong>\s*(?:<code>)?([^<]+)/gi),
+        ...cleanDesc.matchAll(/<strong[^>]*>Output:\s*<\/strong>\s*(?:<[^>]+>)*\s*([^<\n]+)/gi),
       ].map((m) => m[1]?.trim() || '');
 
       const sampleCases = rawInputs.map((input, idx) => ({
@@ -106,6 +112,7 @@ export async function importProblem(input: ImportProblemInput): Promise<ProblemD
         sampleInput: sampleCases[0]?.input || '',
         sampleOutput: sampleCases[0]?.output || '',
         sampleCases,
+        codeSnippets: q.codeSnippets || [],
         timeLimit: '2.0 seconds',
         memoryLimit: '256 megabytes',
       };

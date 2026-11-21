@@ -63,6 +63,12 @@ export type TestCaseItem = {
   output: string;
 };
 
+export interface CodeSnippet {
+  lang: string;
+  langSlug: string;
+  code: string;
+}
+
 // Competitive Programming Problem Data DTO
 export type ProblemData = {
   title: string;
@@ -80,6 +86,7 @@ export type ProblemData = {
   sampleInput?: string;
   sampleOutput?: string;
   sampleCases?: TestCase[];
+  codeSnippets?: CodeSnippet[];
 };
 
 export type QueueProblemStatus = 'TODO' | 'SOLVING' | 'SOLVED' | 'SKIPPED';
@@ -93,6 +100,7 @@ export interface QueueProblemItem {
   tags?: string[];
   description?: string;
   sampleCases: TestCaseItem[];
+  codeSnippets?: CodeSnippet[];
   status: QueueProblemStatus;
   timeSpentSeconds?: number;
 }

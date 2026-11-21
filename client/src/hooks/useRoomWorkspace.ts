@@ -284,18 +284,41 @@ export function useRoomWorkspace({
 
       if (doc) {
         const codeByLang = doc.getMap<string>('codeByLanguage');
+        const codeByProblem = doc.getMap<string>('codeByProblem');
         const meta = doc.getMap<any>('workspaceMeta');
+
+        const currentProb = problemQueueRef.current[activeProblemIndexRef.current] || problemData;
 
         if (currentCode.trim().length > 0 && !isBuiltInBoilerplate(currentCode)) {
           codeByLang.set(language, currentCode);
+          if (currentProb) {
+            codeByProblem.set(`${currentProb.id}:${language}`, currentCode);
+          }
         }
 
-        const existingLangCode = codeByLang.get(newLang);
-        if (typeof existingLangCode === 'string' && existingLangCode.trim().length > 0) {
-          nextCode = existingLangCode;
+        // Check if there is already saved code for target language on THIS problem:
+        const savedProblemLangCode = currentProb ? codeByProblem.get(`${currentProb.id}:${newLang}`) : null;
+        if (typeof savedProblemLangCode === 'string' && savedProblemLangCode.trim().length > 0) {
+          nextCode = savedProblemLangCode;
+        } else {
+          const newLangSlug = newLang === 'python' ? 'python3' : newLang;
+          const snippet = currentProb?.codeSnippets?.find(
+            (s) => s.langSlug === newLangSlug || s.langSlug === newLang || s.lang === newLang
+          );
+          if (snippet?.code) {
+            nextCode = snippet.code;
+          } else {
+            const existingLangCode = codeByLang.get(newLang);
+            if (typeof existingLangCode === 'string' && existingLangCode.trim().length > 0) {
+              nextCode = existingLangCode;
+            }
+          }
         }
 
+        const sharedText = doc.getText('monaco');
         doc.transact(() => {
+          sharedText.delete(0, sharedText.length);
+          sharedText.insert(0, nextCode);
           meta.set('language', newLang);
         });
       }
@@ -303,7 +326,7 @@ export function useRoomWorkspace({
       setLanguage(newLang);
       editorHandle?.setCode(nextCode);
     },
-    [language, isEffectiveReadOnly, getEffectiveTemplate]
+    [language, isEffectiveReadOnly, getEffectiveTemplate, problemData]
   );
 
   const handleResetToTemplate = useCallback(() => {
@@ -315,14 +338,25 @@ export function useRoomWorkspace({
       );
       if (!confirmed) return;
     }
-    const targetTemplate = getEffectiveTemplate(language);
+
+    const currentProb = problemQueueRef.current[activeProblemIndexRef.current] || problemData;
+    const langSlug = language === 'python' ? 'python3' : language;
+    const snippet = currentProb?.codeSnippets?.find(
+      (s) => s.langSlug === langSlug || s.langSlug === language
+    );
+    const targetTemplate = snippet?.code || getEffectiveTemplate(language);
     editorHandleRef.current?.setCode(targetTemplate);
 
     const doc = ydocRef.current;
     if (doc) {
       doc.getMap<string>('codeByLanguage').set(language, targetTemplate);
+      const sharedText = doc.getText('monaco');
+      doc.transact(() => {
+        sharedText.delete(0, sharedText.length);
+        sharedText.insert(0, targetTemplate);
+      });
     }
-  }, [isEffectiveReadOnly, getEffectiveTemplate, language]);
+  }, [isEffectiveReadOnly, getEffectiveTemplate, language, problemData]);
 
   const handleSaveCustomTemplate = useCallback(() => {
     const currentCode = editorHandleRef.current?.getCode() ?? '';
@@ -508,19 +542,26 @@ export function useRoomWorkspace({
       const testCasesByProblem = doc.getMap<string>('testCasesByProblem');
 
       // 1. Save current problem code & testcases
-      if (currentProb) {
+      if (currentProb && currentIdx !== targetIndex) {
         const currentCode = editorHandleRef.current?.getCode() || doc.getText('monaco').toString();
-        if (currentCode.trim().length > 0) {
+        if (currentCode.trim().length > 0 && !isBuiltInBoilerplate(currentCode)) {
+          codeByProblem.set(`${currentProb.id}:${language}`, currentCode);
           codeByProblem.set(currentProb.id, currentCode);
         }
         testCasesByProblem.set(currentProb.id, JSON.stringify(testCasesRef.current));
       }
 
       // 2. Retrieve or initialize target problem code
-      const savedCode = codeByProblem.get(targetProb.id);
+      const savedCode = codeByProblem.get(`${targetProb.id}:${language}`) || codeByProblem.get(targetProb.id);
       let nextCode = savedCode;
-      if (!nextCode || nextCode.trim().length === 0) {
-        if (targetProb.platform === 'LEETCODE' && language === 'cpp') {
+      if (!nextCode || nextCode.trim().length === 0 || isBuiltInBoilerplate(nextCode)) {
+        const langSlug = language === 'python' ? 'python3' : language;
+        const snippet = targetProb.codeSnippets?.find(
+          (s) => s.langSlug === langSlug || s.langSlug === language
+        );
+        if (snippet?.code) {
+          nextCode = snippet.code;
+        } else if (targetProb.platform === 'LEETCODE' && language === 'cpp') {
           nextCode = `class Solution {\npublic:\n    \n};\n`;
         } else {
           nextCode = getEffectiveTemplate(language);
@@ -532,6 +573,7 @@ export function useRoomWorkspace({
         sharedText.delete(0, sharedText.length);
         sharedText.insert(0, nextCode);
       });
+      editorHandleRef.current?.setCode(nextCode);
 
       // 3. Retrieve or initialize target problem testcases
       const savedCasesRaw = testCasesByProblem.get(targetProb.id);
@@ -581,7 +623,7 @@ export function useRoomWorkspace({
   );
 
   const handleAddToQueue = useCallback(
-    (newProblem: ProblemData) => {
+    (newProblem: ProblemData, autoSelect: boolean = true) => {
       const existingQueue = problemQueueRef.current;
       const targetUrlOrId = newProblem.url || newProblem.title;
 
@@ -593,7 +635,9 @@ export function useRoomWorkspace({
       );
 
       if (existingIndex !== -1) {
-        handleSelectQueueProblem(existingIndex);
+        if (autoSelect) {
+          handleSelectQueueProblem(existingIndex);
+        }
         return;
       }
 
@@ -612,6 +656,7 @@ export function useRoomWorkspace({
           input: c.input,
           output: c.output || '',
         })),
+        codeSnippets: newProblem.codeSnippets,
         status: 'TODO',
       };
 
@@ -620,8 +665,8 @@ export function useRoomWorkspace({
       problemQueueRef.current = updated;
       ydocRef.current?.getMap('workspaceMeta').set('problemQueue', updated);
 
-      if (updated.length === 1) {
-        handleSelectQueueProblem(0);
+      if (autoSelect) {
+        handleSelectQueueProblem(updated.length - 1);
       }
     },
     [handleSelectQueueProblem]
@@ -801,7 +846,7 @@ export function useRoomWorkspace({
     setRunningBy(username || 'Peer');
 
     try {
-      const results: Record<number, ExecutionResult> = {};
+      const results: Record<number, ExecutionResult & { caseIndex?: number }> = {};
       let allPassed = true;
 
       for (let i = 0; i < cases.length; i++) {
@@ -819,6 +864,19 @@ export function useRoomWorkspace({
           caseIndex: i,
         };
         results[i] = resWithCase;
+
+        if (res.status === 'COMPILE_ERROR') {
+          // If code fails compilation on any case, it will fail on all cases.
+          // Fast-fail: populate compile error for all remaining cases and break immediately.
+          for (let rem = i + 1; rem < cases.length; rem++) {
+            results[rem] = {
+              ...res,
+              caseIndex: rem,
+            };
+          }
+          allPassed = false;
+          break;
+        }
 
         if (tc.output && tc.output.trim().length > 0) {
           const verdict = computeVerdict(res.stdout, tc.output);

@@ -246,34 +246,147 @@ function runProcess(
   });
 }
 
+export const PYTHON_LEETCODE_HEADER = `from typing import *
+import collections
+import heapq
+import bisect
+import math
+import sys
+import json
+
+class ListNode:
+    def __init__(self, val=0, next=None):
+        self.val = val
+        self.next = next
+
+class TreeNode:
+    def __init__(self, val=0, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def __codev_build_list(vals):
+    if not isinstance(vals, list):
+        return vals
+    dummy = ListNode(0)
+    cur = dummy
+    for v in vals:
+        cur.next = ListNode(v)
+        cur = cur.next
+    return dummy.next
+
+def __codev_list_to_array(node):
+    res = []
+    cur = node
+    while cur:
+        res.append(cur.val)
+        cur = cur.next
+    return res
+
+def __codev_build_tree(vals):
+    if not isinstance(vals, list) or not vals:
+        return None
+    root = TreeNode(vals[0])
+    queue = [root]
+    i = 1
+    while queue and i < len(vals):
+        cur = queue.pop(0)
+        if i < len(vals) and vals[i] is not None:
+            cur.left = TreeNode(vals[i])
+            queue.append(cur.left)
+        i += 1
+        if i < len(vals) and vals[i] is not None:
+            cur.right = TreeNode(vals[i])
+            queue.append(cur.right)
+        i += 1
+    return root
+
+def __codev_tree_to_array(root):
+    if not root:
+        return []
+    res = []
+    queue = [root]
+    while queue:
+        cur = queue.pop(0)
+        if cur:
+            res.append(cur.val)
+            queue.append(cur.left)
+            queue.append(cur.right)
+        else:
+            res.append(None)
+    while res and res[-1] is None:
+        res.pop()
+    return res
+
+`;
+
 export function injectLeetCodeCppDriver(code: string): string {
   // If user already defined main(), don't inject
   if (/\bint\s+main\s*\(/.test(code)) return code;
   if (!/class\s+Solution\b/.test(code)) return code;
 
-  // Detect method inside class Solution
-  const methodMatch = code.match(
-    /(?:public\s*:)?\s*([a-zA-Z0-9_<>,:\s*&]+?)\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{/
-  );
+  // Clean comments before checking definitions and signatures
+  const cleaned = code
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*/g, '');
 
-  let driver = '';
+  const hasListNodeDef = /\bstruct\s+ListNode\b/.test(cleaned);
+  const hasTreeNodeDef = /\bstruct\s+TreeNode\b/.test(cleaned);
 
-  if (methodMatch) {
-    const returnType = methodMatch[1].trim();
-    const methodName = methodMatch[2].trim();
-    const argsStr = methodMatch[3].trim();
-
-    // TwoSum pattern or (vector<int>, int) -> vector<int>
-    if (argsStr.includes('vector<int>') && argsStr.includes('int') && returnType.includes('vector<int>')) {
-      driver = `
+  const header = `
 // ========================================================
-// [CodeV Injected LeetCode Driver]
+// [CodeV LeetCode Environment Definitions]
 // ========================================================
 #include <iostream>
 #include <string>
 #include <sstream>
 #include <vector>
+#include <algorithm>
+#include <unordered_map>
+#include <unordered_set>
+#include <map>
+#include <set>
+#include <queue>
+#include <stack>
+#include <cmath>
+#include <climits>
+#include <iomanip>
+using namespace std;
 
+#ifndef __CODEV_LEETCODE_STUBS__
+#define __CODEV_LEETCODE_STUBS__
+
+${hasListNodeDef ? '' : `
+struct ListNode {
+    int val;
+    ListNode *next;
+    ListNode() : val(0), next(nullptr) {}
+    ListNode(int x) : val(x), next(nullptr) {}
+    ListNode(int x, ListNode *next) : val(x), next(next) {}
+};
+`}
+
+${hasTreeNodeDef ? '' : `
+struct TreeNode {
+    int val;
+    TreeNode *left;
+    TreeNode *right;
+    TreeNode() : val(0), left(nullptr), right(nullptr) {}
+    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+    TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+};
+`}
+
+#endif
+`;
+
+  const methodMatch = cleaned.match(
+    /(?:public|private|protected)?\s*:\s*([^;{()]+?)\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{/
+  );
+
+  let driver = '';
+
+  const helperFunctions = `
 static std::vector<int> __codev_parse_vector_int(std::string s) {
     std::vector<int> res;
     for (char &c : s) {
@@ -285,6 +398,239 @@ static std::vector<int> __codev_parse_vector_int(std::string s) {
     return res;
 }
 
+static ListNode* __codev_build_list(const std::vector<int>& vals) {
+    ListNode dummy(0);
+    ListNode* cur = &dummy;
+    for (int v : vals) {
+        cur->next = new ListNode(v);
+        cur = cur->next;
+    }
+    return dummy.next;
+}
+
+static void __codev_print_list(ListNode* head) {
+    std::cout << "[";
+    ListNode* cur = head;
+    while (cur) {
+        std::cout << cur->val;
+        if (cur->next) std::cout << ",";
+        cur = cur->next;
+    }
+    std::cout << "]" << std::endl;
+}
+
+static TreeNode* __codev_build_tree(std::string s) {
+    for (char &c : s) {
+        if (c == '[' || c == ']' || c == ',') c = ' ';
+    }
+    std::stringstream ss(s);
+    std::string token;
+    std::vector<std::string> tokens;
+    while (ss >> token) tokens.push_back(token);
+    if (tokens.empty() || tokens[0] == "null") return nullptr;
+
+    TreeNode* root = new TreeNode(std::stoi(tokens[0]));
+    std::queue<TreeNode*> q;
+    q.push(root);
+    size_t i = 1;
+    while (!q.empty() && i < tokens.size()) {
+        TreeNode* cur = q.front();
+        q.pop();
+        if (i < tokens.size() && tokens[i] != "null") {
+            cur->left = new TreeNode(std::stoi(tokens[i]));
+            q.push(cur->left);
+        }
+        i++;
+        if (i < tokens.size() && tokens[i] != "null") {
+            cur->right = new TreeNode(std::stoi(tokens[i]));
+            q.push(cur->right);
+        }
+        i++;
+    }
+    return root;
+}
+
+static void __codev_print_tree(TreeNode* root) {
+    if (!root) {
+        std::cout << "[]" << std::endl;
+        return;
+    }
+    std::vector<std::string> res;
+    std::queue<TreeNode*> q;
+    q.push(root);
+    while (!q.empty()) {
+        TreeNode* cur = q.front();
+        q.pop();
+        if (cur) {
+            res.push_back(std::to_string(cur->val));
+            q.push(cur->left);
+            q.push(cur->right);
+        } else {
+            res.push_back("null");
+        }
+    }
+    while (!res.empty() && res.back() == "null") res.pop_back();
+    std::cout << "[";
+    for (size_t i = 0; i < res.size(); ++i) {
+        std::cout << res[i] << (i + 1 < res.size() ? "," : "");
+    }
+    std::cout << "]" << std::endl;
+}
+`;
+
+  if (methodMatch) {
+    const rawReturnType = methodMatch[1].trim();
+    const returnType = rawReturnType.replace(/^(?:public|private|protected)\s*:\s*/, '').trim();
+    const methodName = methodMatch[2].trim();
+    const argsStr = methodMatch[3].trim();
+    const argsWithoutVectors = argsStr.replace(/vector\s*<\s*int\s*>/g, '');
+    const hasStandaloneIntArg = /\b(int|long)\b/.test(argsWithoutVectors);
+
+    // 1. Linked List: (ListNode*, ListNode*) -> ListNode* (e.g. addTwoNumbers, mergeTwoLists)
+    if (returnType.includes('ListNode') && argsStr.includes('ListNode') && (argsStr.match(/ListNode/g) || []).length >= 2) {
+      driver = `
+${helperFunctions}
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string line1, line2;
+    if (!std::getline(std::cin, line1)) return 0;
+    while (line1.empty() && std::getline(std::cin, line1));
+    if (!std::getline(std::cin, line2)) return 0;
+    while (line2.empty() && std::getline(std::cin, line2));
+
+    ListNode* l1 = __codev_build_list(__codev_parse_vector_int(line1));
+    ListNode* l2 = __codev_build_list(__codev_parse_vector_int(line2));
+
+    Solution sol;
+    ListNode* ans = sol.${methodName}(l1, l2);
+    __codev_print_list(ans);
+    return 0;
+}
+`;
+    }
+    // 2. Linked List: (ListNode*) -> ListNode* (e.g. reverseList, middleNode)
+    else if (returnType.includes('ListNode') && argsStr.includes('ListNode')) {
+      driver = `
+${helperFunctions}
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string line1;
+    if (!std::getline(std::cin, line1)) return 0;
+    while (line1.empty() && std::getline(std::cin, line1));
+
+    ListNode* head = __codev_build_list(__codev_parse_vector_int(line1));
+
+    Solution sol;
+    ListNode* ans = sol.${methodName}(head);
+    __codev_print_list(ans);
+    return 0;
+}
+`;
+    }
+    // 3. Linked List: (ListNode*) -> bool (e.g. hasCycle)
+    else if (returnType === 'bool' && argsStr.includes('ListNode')) {
+      driver = `
+${helperFunctions}
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string line1;
+    if (!std::getline(std::cin, line1)) return 0;
+    while (line1.empty() && std::getline(std::cin, line1));
+
+    ListNode* head = __codev_build_list(__codev_parse_vector_int(line1));
+
+    Solution sol;
+    bool ans = sol.${methodName}(head);
+    std::cout << (ans ? "true" : "false") << std::endl;
+    return 0;
+}
+`;
+    }
+    // 4. Binary Tree: (TreeNode*) -> TreeNode* (e.g. invertTree)
+    else if (returnType.includes('TreeNode') && argsStr.includes('TreeNode')) {
+      driver = `
+${helperFunctions}
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string line1;
+    if (!std::getline(std::cin, line1)) return 0;
+    while (line1.empty() && std::getline(std::cin, line1));
+
+    TreeNode* root = __codev_build_tree(line1);
+
+    Solution sol;
+    TreeNode* ans = sol.${methodName}(root);
+    __codev_print_tree(ans);
+    return 0;
+}
+`;
+    }
+    // 5. Binary Tree: (TreeNode*) -> int (e.g. maxDepth, minDepth)
+    else if (returnType === 'int' && argsStr.includes('TreeNode')) {
+      driver = `
+${helperFunctions}
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string line1;
+    if (!std::getline(std::cin, line1)) return 0;
+    while (line1.empty() && std::getline(std::cin, line1));
+
+    TreeNode* root = __codev_build_tree(line1);
+
+    Solution sol;
+    int ans = sol.${methodName}(root);
+    std::cout << ans << std::endl;
+    return 0;
+}
+`;
+    }
+    // 6. Binary Tree: (TreeNode*) -> bool or (TreeNode*, TreeNode*) -> bool (e.g. isSameTree, isValidBST)
+    else if (returnType === 'bool' && argsStr.includes('TreeNode')) {
+      driver = `
+${helperFunctions}
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string line1;
+    if (!std::getline(std::cin, line1)) return 0;
+    while (line1.empty() && std::getline(std::cin, line1));
+
+    TreeNode* p = __codev_build_tree(line1);
+
+    std::string line2;
+    TreeNode* q = nullptr;
+    if (std::getline(std::cin, line2)) {
+        while (line2.empty() && std::getline(std::cin, line2));
+        if (!line2.empty()) q = __codev_build_tree(line2);
+    }
+
+    Solution sol;
+    bool ans = false;
+    if (q != nullptr) {
+        ans = sol.${methodName}(p, q);
+    } else {
+        ans = sol.${methodName}(p);
+    }
+    std::cout << (ans ? "true" : "false") << std::endl;
+    return 0;
+}
+`;
+    }
+    // 7. Vector & Int -> Vector (e.g. twoSum)
+    else if (argsStr.includes('vector<int>') && hasStandaloneIntArg && returnType.includes('vector<int>')) {
+      driver = `
+${helperFunctions}
 int main() {
     std::ios_base::sync_with_stdio(false);
     std::cin.tie(NULL);
@@ -307,24 +653,78 @@ int main() {
     return 0;
 }
 `;
-    } else if (returnType === 'int' && argsStr.includes('vector<int>')) {
-      driver = `
-#include <iostream>
-#include <string>
-#include <sstream>
-#include <vector>
-
-static std::vector<int> __codev_parse_vector_int(std::string s) {
-    std::vector<int> res;
-    for (char &c : s) {
-        if (c == '[' || c == ']' || c == ',') c = ' ';
     }
-    std::stringstream ss(s);
-    int num;
-    while (ss >> num) res.push_back(num);
-    return res;
-}
+    // 8. Vector -> Vector (e.g. sortedSquares)
+    else if (returnType.includes('vector<int>') && argsStr.includes('vector<int>') && !argsStr.includes(',')) {
+      driver = `
+${helperFunctions}
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
 
+    std::string line1;
+    if (!std::getline(std::cin, line1)) return 0;
+    std::vector<int> nums = __codev_parse_vector_int(line1);
+
+    Solution sol;
+    std::vector<int> ans = sol.${methodName}(nums);
+
+    std::cout << "[";
+    for (size_t i = 0; i < ans.size(); ++i) {
+        std::cout << ans[i] << (i + 1 < ans.size() ? "," : "");
+    }
+    std::cout << "]" << std::endl;
+    return 0;
+}
+`;
+    }
+    // 9. Vector -> void (in-place modification, e.g. moveZeroes, sortColors)
+    else if (returnType === 'void' && argsStr.includes('vector<int>')) {
+      driver = `
+${helperFunctions}
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string line1;
+    if (!std::getline(std::cin, line1)) return 0;
+    std::vector<int> nums = __codev_parse_vector_int(line1);
+
+    Solution sol;
+    sol.${methodName}(nums);
+
+    std::cout << "[";
+    for (size_t i = 0; i < nums.size(); ++i) {
+        std::cout << nums[i] << (i + 1 < nums.size() ? "," : "");
+    }
+    std::cout << "]" << std::endl;
+    return 0;
+}
+`;
+    }
+    // 10. Vector -> Bool (e.g. containsDuplicate)
+    else if (returnType === 'bool' && argsStr.includes('vector<int>') && !argsStr.includes(',')) {
+      driver = `
+${helperFunctions}
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string line1;
+    if (!std::getline(std::cin, line1)) return 0;
+    std::vector<int> nums = __codev_parse_vector_int(line1);
+
+    Solution sol;
+    bool ans = sol.${methodName}(nums);
+    std::cout << (ans ? "true" : "false") << std::endl;
+    return 0;
+}
+`;
+    }
+    // 11. Vector -> Int (e.g. maxSubArray, singleNumber, majorityElement)
+    else if (returnType === 'int' && argsStr.includes('vector<int>') && !argsStr.includes(',')) {
+      driver = `
+${helperFunctions}
 int main() {
     std::ios_base::sync_with_stdio(false);
     std::cin.tie(NULL);
@@ -340,27 +740,10 @@ int main() {
 }
 `;
     }
-  }
-
-  // Fallback to standard TwoSum driver if signature not matched
-  if (!driver) {
-    driver = `
-#include <iostream>
-#include <string>
-#include <sstream>
-#include <vector>
-
-static std::vector<int> __codev_parse_vector_int(std::string s) {
-    std::vector<int> res;
-    for (char &c : s) {
-        if (c == '[' || c == ']' || c == ',') c = ' ';
-    }
-    std::stringstream ss(s);
-    int num;
-    while (ss >> num) res.push_back(num);
-    return res;
-}
-
+    // 12. Vector & Int -> Int (e.g. binarySearch / search / removeElement)
+    else if (returnType === 'int' && argsStr.includes('vector<int>') && hasStandaloneIntArg) {
+      driver = `
+${helperFunctions}
 int main() {
     std::ios_base::sync_with_stdio(false);
     std::cin.tie(NULL);
@@ -373,19 +756,211 @@ int main() {
     if (!(std::cin >> target)) return 0;
 
     Solution sol;
-    std::vector<int> ans = sol.twoSum(nums, target);
-
-    std::cout << "[";
-    for (size_t i = 0; i < ans.size(); ++i) {
-        std::cout << ans[i] << (i + 1 < ans.size() ? "," : "");
+    int ans = sol.${methodName}(nums, target);
+    std::cout << ans << std::endl;
+    return 0;
+}
+`;
     }
-    std::cout << "]" << std::endl;
+    // 13. (Double, Int) -> Double (e.g. myPow)
+    else if (returnType.includes('double') && argsStr.includes('double') && argsStr.includes('int')) {
+      driver = `
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    double x = 0.0;
+    long long n = 0;
+    if (!(std::cin >> x >> n)) return 0;
+
+    Solution sol;
+    double ans = sol.${methodName}(x, (int)n);
+    std::cout << std::fixed << std::setprecision(5) << ans << std::endl;
+    return 0;
+}
+`;
+    }
+    // 14. (Int) -> Bool (e.g. isPalindrome, isPowerOfTwo)
+    else if (returnType === 'bool' && (argsStr.trim().startsWith('int') || argsStr.trim().startsWith('long')) && !argsStr.includes('vector') && !argsStr.includes('string')) {
+      driver = `
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    long long n = 0;
+    if (!(std::cin >> n)) return 0;
+
+    Solution sol;
+    bool ans = sol.${methodName}((int)n);
+    std::cout << (ans ? "true" : "false") << std::endl;
+    return 0;
+}
+`;
+    }
+    // 15. (Int) -> Int (e.g. climbStairs, fib, reverse)
+    else if ((returnType === 'int' || returnType === 'long long') && (argsStr.trim().startsWith('int') || argsStr.trim().startsWith('long')) && !argsStr.includes('vector') && !argsStr.includes('string') && !argsStr.includes(',')) {
+      driver = `
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    long long n = 0;
+    if (!(std::cin >> n)) return 0;
+
+    Solution sol;
+    auto ans = sol.${methodName}((int)n);
+    std::cout << ans << std::endl;
+    return 0;
+}
+`;
+    }
+    // 16. String -> Int (e.g. lengthOfLongestSubstring, romanToInt, myAtoi)
+    else if ((returnType === 'int' || returnType === 'size_t') && argsStr.includes('string') && (argsStr.match(/string/g) || []).length === 1) {
+      driver = `
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string s;
+    if (!std::getline(std::cin, s)) return 0;
+    while (s.empty() && std::getline(std::cin, s));
+    if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+        s = s.substr(1, s.size() - 2);
+    }
+
+    Solution sol;
+    int ans = sol.${methodName}(s);
+    std::cout << ans << std::endl;
+    return 0;
+}
+`;
+    }
+    // 17. String -> Bool (e.g. isValid, isPalindrome)
+    else if (returnType === 'bool' && argsStr.includes('string') && (argsStr.match(/string/g) || []).length === 1) {
+      driver = `
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string s;
+    if (!std::getline(std::cin, s)) return 0;
+    while (s.empty() && std::getline(std::cin, s));
+    if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+        s = s.substr(1, s.size() - 2);
+    }
+
+    Solution sol;
+    bool ans = sol.${methodName}(s);
+    std::cout << (ans ? "true" : "false") << std::endl;
+    return 0;
+}
+`;
+    }
+    // 18. String -> String (e.g. longestCommonPrefix, reverseWords)
+    else if (returnType === 'string' && argsStr.includes('string') && (argsStr.match(/string/g) || []).length === 1) {
+      driver = `
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string s;
+    if (!std::getline(std::cin, s)) return 0;
+    while (s.empty() && std::getline(std::cin, s));
+    if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+        s = s.substr(1, s.size() - 2);
+    }
+
+    Solution sol;
+    std::string ans = sol.${methodName}(s);
+    std::cout << ans << std::endl;
+    return 0;
+}
+`;
+    }
+    // 19. (String, String) -> Bool (e.g. isAnagram)
+    else if (returnType === 'bool' && argsStr.includes('string') && (argsStr.match(/string/g) || []).length >= 2) {
+      driver = `
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string s1, s2;
+    if (!std::getline(std::cin, s1)) return 0;
+    while (s1.empty() && std::getline(std::cin, s1));
+    if (s1.size() >= 2 && s1.front() == '"' && s1.back() == '"') s1 = s1.substr(1, s1.size() - 2);
+
+    if (!std::getline(std::cin, s2)) return 0;
+    while (s2.empty() && std::getline(std::cin, s2));
+    if (s2.size() >= 2 && s2.front() == '"' && s2.back() == '"') s2 = s2.substr(1, s2.size() - 2);
+
+    Solution sol;
+    bool ans = sol.${methodName}(s1, s2);
+    std::cout << (ans ? "true" : "false") << std::endl;
+    return 0;
+}
+`;
+    }
+    // 20. (String, String) -> Int (e.g. strStr)
+    else if ((returnType === 'int' || returnType === 'size_t') && argsStr.includes('string') && (argsStr.match(/string/g) || []).length >= 2) {
+      driver = `
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string s1, s2;
+    if (!std::getline(std::cin, s1)) return 0;
+    while (s1.empty() && std::getline(std::cin, s1));
+    if (s1.size() >= 2 && s1.front() == '"' && s1.back() == '"') s1 = s1.substr(1, s1.size() - 2);
+
+    if (!std::getline(std::cin, s2)) return 0;
+    while (s2.empty() && std::getline(std::cin, s2));
+    if (s2.size() >= 2 && s2.front() == '"' && s2.back() == '"') s2 = s2.substr(1, s2.size() - 2);
+
+    Solution sol;
+    int ans = sol.${methodName}(s1, s2);
+    std::cout << ans << std::endl;
+    return 0;
+}
+`;
+    }
+    // 21. (String, String) -> String (e.g. addStrings)
+    else if (returnType === 'string' && argsStr.includes('string') && (argsStr.match(/string/g) || []).length >= 2) {
+      driver = `
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string s1, s2;
+    if (!std::getline(std::cin, s1)) return 0;
+    while (s1.empty() && std::getline(std::cin, s1));
+    if (s1.size() >= 2 && s1.front() == '"' && s1.back() == '"') s1 = s1.substr(1, s1.size() - 2);
+
+    if (!std::getline(std::cin, s2)) return 0;
+    while (s2.empty() && std::getline(std::cin, s2));
+    if (s2.size() >= 2 && s2.front() == '"' && s2.back() == '"') s2 = s2.substr(1, s2.size() - 2);
+
+    Solution sol;
+    std::string ans = sol.${methodName}(s1, s2);
+    std::cout << ans << std::endl;
+    return 0;
+}
+`;
+    }
+  }
+
+  // Graceful fallback for unrecognized/custom signatures: NO MORE HARDCODED twoSum!
+  if (!driver) {
+    driver = `
+int main() {
+    std::cout << "[CodeV Notice] Automatic test runner for this specific signature is coming soon.\\n"
+              << "Tip: You can add an 'int main()' at the bottom of your code to run custom test cases."
+              << std::endl;
     return 0;
 }
 `;
   }
 
-  return `${code}\n${driver}`;
+  return `${header}\n#line 1 "main.cpp"\n${code}\n${driver}`;
 }
 
 export function injectLeetCodePythonDriver(code: string): string {
@@ -393,15 +968,7 @@ export function injectLeetCodePythonDriver(code: string): string {
   if (/__name__\s*==\s*['"]__main__['"]/.test(code)) return code;
   if (!/class\s+Solution\b/.test(code)) return code;
 
-  const header = `from typing import *
-import collections
-import heapq
-import bisect
-import math
-import sys
-import json
-
-`;
+  const header = PYTHON_LEETCODE_HEADER;
 
   const driver = `
 # ========================================================
@@ -411,7 +978,11 @@ if __name__ == "__main__":
     lines = [line.strip() for line in sys.stdin if line.strip()]
     if lines:
         sol = Solution()
-        method_names = [m for m in dir(sol) if not m.startswith('_') and callable(getattr(sol, m))]
+        # Preserve declaration order, excluding built-in attributes
+        method_names = [m for m in getattr(Solution, '__dict__', {}).keys() if not m.startswith('_') and callable(getattr(Solution, m))]
+        if not method_names:
+            method_names = [m for m in dir(sol) if not m.startswith('_') and callable(getattr(sol, m))]
+
         if method_names:
             func = getattr(sol, method_names[0])
             parsed_args = []
@@ -420,13 +991,36 @@ if __name__ == "__main__":
                     parsed_args.append(json.loads(line))
                 except Exception:
                     parsed_args.append(line)
+
+            # Check if method arguments expect linked lists or trees
+            import inspect
+            sig = inspect.signature(func)
+            param_names = list(sig.parameters.keys())
+            for idx, p_name in enumerate(param_names):
+                if idx < len(parsed_args) and isinstance(parsed_args[idx], list):
+                    param_type = str(sig.parameters[p_name].annotation)
+                    if 'ListNode' in param_type or p_name in ('l1', 'l2', 'head', 'list1', 'list2'):
+                        parsed_args[idx] = __codev_build_list(parsed_args[idx])
+                    elif 'TreeNode' in param_type or p_name in ('root', 'p', 'q', 'node'):
+                        parsed_args[idx] = __codev_build_tree(parsed_args[idx])
+
             res = func(*parsed_args)
-            if isinstance(res, bool):
+            if isinstance(res, ListNode):
+                print(json.dumps(__codev_list_to_array(res), separators=(',', ':')))
+            elif isinstance(res, TreeNode):
+                print(json.dumps(__codev_tree_to_array(res), separators=(',', ':')))
+            elif isinstance(res, bool):
                 print("true" if res else "false")
             elif isinstance(res, (list, dict)):
                 print(json.dumps(res, separators=(',', ':')))
             elif res is not None:
                 print(res)
+            elif len(parsed_args) > 0 and isinstance(parsed_args[0], (list, dict)):
+                # In-place modification (e.g. moveZeroes), print modified arg0
+                print(json.dumps(parsed_args[0], separators=(',', ':')))
+        else:
+            print("[CodeV Notice] Automatic test runner for this specific signature is coming soon.")
+            print("Tip: You can add an 'if __name__ == \\"__main__\\":' block to run custom test cases.")
 `;
 
   return `${header}${code}\n${driver}`;
@@ -539,11 +1133,21 @@ const executeViaLocal = async (params: ExecutionParams): Promise<ExecutionResult
     );
 
     const timedOut = runRes.timedOut;
+    let finalStderr = runRes.stderr;
+    if (language === 'python' && /class\s+Solution\b/.test(code) && finalStderr.includes('main.py')) {
+      const headerLines = PYTHON_LEETCODE_HEADER.split('\n').length - 1;
+      finalStderr = finalStderr.replace(/File ".*?main\.py", line (\d+)/g, (_, lineStr) => {
+        const rawLine = parseInt(lineStr, 10);
+        const adjusted = Math.max(1, rawLine - headerLines);
+        return `File "main.py", line ${adjusted}`;
+      });
+    }
+
     return {
       stdout: runRes.stdout,
       stderr: timedOut
-        ? `${runRes.stderr}\nExecution timed out after ${EXECUTION_TIMEOUT_MS}ms.`.trim()
-        : runRes.stderr,
+        ? `${finalStderr}\nExecution timed out after ${EXECUTION_TIMEOUT_MS}ms.`.trim()
+        : finalStderr,
       exitCode: runRes.exitCode,
       executionTimeMs: runRes.durationMs,
       status: timedOut

@@ -83,7 +83,7 @@ interface ContextColumnProps {
   queue?: QueueProblemItem[];
   activeProblemIndex?: number;
   onSelectProblem?: (index: number) => void;
-  onAddProblem?: (problem: ProblemData) => void;
+  onAddProblem?: (problem: ProblemData, autoSelect?: boolean) => void;
   onRemoveProblem?: (id: string) => void;
   onUpdateStatus?: (id: string, status: QueueProblemStatus) => void;
 }
@@ -168,16 +168,21 @@ export function ContextColumn({
   };
 
   const handlePullWishlist = (wishlist: CuratedWishlist) => {
-    for (const p of wishlist.problems) {
-      onAddProblem?.({
-        title: p.title,
-        platform: p.platform,
-        url: p.urlOrId,
-        difficulty: p.difficulty,
-        sampleCases: p.sampleCases,
-        description: `Imported from curated wishlist: ${wishlist.title}`,
-      });
-    }
+    const queueBefore = queue.length;
+    wishlist.problems.forEach((p, idx) => {
+      onAddProblem?.(
+        {
+          title: p.title,
+          platform: p.platform,
+          url: p.urlOrId,
+          difficulty: p.difficulty,
+          sampleCases: p.sampleCases,
+          codeSnippets: p.codeSnippets,
+          description: `Imported from curated wishlist: ${wishlist.title}`,
+        },
+        idx === 0 && queueBefore === 0
+      );
+    });
   };
 
   // Problem URL import state
