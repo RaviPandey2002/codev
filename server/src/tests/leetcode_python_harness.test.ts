@@ -26,6 +26,19 @@ class Solution:
         return []
 `.trim();
 
+  // Buggy Python Two Sum with seen[num] = 1 (constant map value)
+  const buggyPythonTwoSum = `
+class Solution:
+    def twoSum(self, nums: List[int], target: int) -> List[int]:
+        seen = {}
+        for i, num in enumerate(nums):
+            complement = target - num
+            if complement in seen:
+                return [seen[complement], i]
+            seen[num] = 1
+        return []
+`.trim();
+
   // 2. Palindrome Number in Python (returns bool)
   const pythonIsPalindrome = `
 class Solution:
@@ -36,19 +49,50 @@ class Solution:
         return s == s[::-1]
 `.trim();
 
-  const tests = [
+  const canonicalTwoSumCases = [
     {
-      code: pythonTwoSum,
-      name: 'Python Two Sum: Example 1',
+      name: 'Case 1: Standard Case (Example 1)',
       input: '[2,7,11,15]\n9',
       expected: '[0,1]',
     },
     {
-      code: pythonTwoSum,
-      name: 'Python Two Sum: Example 2',
+      name: 'Case 2: Non-zero start (Example 2)',
       input: '[3,2,4]\n6',
       expected: '[1,2]',
     },
+    {
+      name: 'Case 3: Duplicate Numbers (Example 3)',
+      input: '[3,3]\n6',
+      expected: '[0,1]',
+    },
+    {
+      name: 'Case 4: High Index Offset',
+      input: '[1,5,3,7]\n10',
+      expected: '[2,3]',
+    },
+    {
+      name: 'Case 5: Late Pair',
+      input: '[10,20,30,40,50]\n90',
+      expected: '[3,4]',
+    },
+    {
+      name: 'Case 6: Zeros & Index 0',
+      input: '[0,4,3,0]\n0',
+      expected: '[0,3]',
+    },
+    {
+      name: 'Case 7: Negative Numbers',
+      input: '[-3,4,3,90]\n0',
+      expected: '[0,2]',
+    },
+    {
+      name: 'Case 8: Bookend Pair',
+      input: '[5,1,9,2,7]\n12',
+      expected: '[0,4]',
+    },
+  ];
+
+  const palindromeTests = [
     {
       code: pythonIsPalindrome,
       name: 'Python Palindrome: True Case',
@@ -65,7 +109,62 @@ class Solution:
 
   let passedCount = 0;
 
-  for (const test of tests) {
+  // Phase 1: Positive verification of correct Python Two Sum on 8 canonical test cases
+  console.log('▶ [Positive Test] Running Correct Python Two Sum across 8 Canonical Test Cases:');
+  for (const tc of canonicalTwoSumCases) {
+    const res = await executeCode({
+      language: 'python',
+      code: pythonTwoSum,
+      stdin: tc.input,
+    });
+
+    const actual = res.stdout.trim();
+    const passed = res.status === 'SUCCESS' && actual === tc.expected;
+
+    if (passed) {
+      console.log(`✅ [PASS] Python Two Sum - ${tc.name}`);
+      console.log(`   Output: ${actual} (time: ${res.executionTimeMs}ms)\n`);
+      passedCount++;
+    } else {
+      console.error(`❌ [FAIL] Python Two Sum - ${tc.name}`);
+      console.error(`   Status:   ${res.status}`);
+      console.error(`   Expected: ${tc.expected}`);
+      console.error(`   Actual:   ${actual}`);
+      console.error(`   Stderr:   ${res.stderr}\n`);
+    }
+  }
+
+  // Phase 2: Negative verification of buggy Python Two Sum (seen[num] = 1) on 8 canonical cases
+  console.log('▶ [Negative Test] Running Buggy Python Two Sum (seen[num] = 1) across 8 Canonical Test Cases:');
+  let buggyPassedCount = 0;
+  for (const tc of canonicalTwoSumCases) {
+    const res = await executeCode({
+      language: 'python',
+      code: buggyPythonTwoSum,
+      stdin: tc.input,
+    });
+
+    const actual = res.stdout.trim();
+    const isMatch = actual === tc.expected;
+
+    if (isMatch) {
+      buggyPassedCount++;
+      console.log(`⚠️ Buggy Python code accidentally matched ${tc.name}: Got ${actual} (coincidental index 1)`);
+    } else {
+      console.log(`✅ Buggy Python code correctly failed ${tc.name}: Expected ${tc.expected}, got ${actual}`);
+    }
+  }
+
+  const buggyFailedVerification = buggyPassedCount < canonicalTwoSumCases.length;
+  if (buggyFailedVerification) {
+    console.log(`\n  ✅ Negative verification PASSED: Buggy Python code failed verification (${buggyPassedCount}/${canonicalTwoSumCases.length} passed, ${canonicalTwoSumCases.length - buggyPassedCount} failed)\n`);
+  } else {
+    console.error(`\n  ❌ Negative verification FAILED: Buggy Python code unexpectedly passed all ${canonicalTwoSumCases.length} cases!\n`);
+  }
+
+  // Phase 3: Palindrome Tests
+  console.log('▶ Running Python Palindrome Tests:');
+  for (const test of palindromeTests) {
     const res = await executeCode({
       language: 'python',
       code: test.code,
@@ -88,8 +187,13 @@ class Solution:
     }
   }
 
-  console.log(`Summary: ${passedCount}/${tests.length} tests passed.`);
-  if (passedCount !== tests.length) {
+  const totalExpectedPassed = canonicalTwoSumCases.length + palindromeTests.length;
+  console.log(`=====================================================`);
+  console.log(`Summary: ${passedCount}/${totalExpectedPassed} positive tests passed.`);
+  console.log(`🛡️ Negative Verification: ${buggyFailedVerification ? 'PASSED (buggy code failed suite)' : 'FAILED'}`);
+  console.log(`=====================================================`);
+
+  if (passedCount !== totalExpectedPassed || !buggyFailedVerification) {
     process.exit(1);
   }
 }

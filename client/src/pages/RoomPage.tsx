@@ -14,7 +14,7 @@ import { useRoomWorkspace } from '@/hooks/useRoomWorkspace';
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout';
 import { getApiErrorMessage } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
-import type { RoomDTO, RoomRole } from '@codev/shared';
+import type { ArenaPlatform, RoomDTO, RoomRole } from '@codev/shared';
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -105,6 +105,11 @@ export default function RoomPage() {
     toggleIoFold,
     arenaPlatform: room?.sourceType === 'COMPILER' ? (room?.arenaPlatform || 'CODEFORCES') : null,
   });
+
+  const activeProblem = problemQueue[activeProblemIndex] || problemData;
+  const effectivePlatform: ArenaPlatform | null =
+    (activeProblem?.platform as ArenaPlatform | undefined) ||
+    (room?.sourceType === 'COMPILER' ? (room?.arenaPlatform || 'CODEFORCES') : null);
 
   useEffect(() => {
     if (!roomId) return;
@@ -292,7 +297,7 @@ export default function RoomPage() {
             isEffectiveReadOnly={isEffectiveReadOnly}
             problemNotes={problemNotes}
             onProblemNotesChange={handleProblemNotesChange}
-            arenaPlatform={room.sourceType === 'COMPILER' ? (room.arenaPlatform || 'CODEFORCES') : null}
+            arenaPlatform={effectivePlatform}
             problemData={problemData}
             onProblemDataChange={(data) => {
               handleProblemDataChange(data);
@@ -356,7 +361,7 @@ export default function RoomPage() {
             expectedOutput={expectedOutput}
             onExpectedOutputChange={handleExpectedOutputChange}
             isEffectiveReadOnly={isEffectiveReadOnly}
-            arenaPlatform={room.sourceType === 'COMPILER' ? (room.arenaPlatform || 'CODEFORCES') : null}
+            arenaPlatform={effectivePlatform}
             testCases={testCases}
             activeCaseIndex={activeCaseIndex}
             caseResults={caseResults}

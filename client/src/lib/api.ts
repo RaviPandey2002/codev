@@ -22,7 +22,6 @@ api.interceptors.response.use(
 
     if (!originalRequest || originalRequest._retry) return Promise.reject(error);
 
-    const errorCode = error.response?.data?.error?.code;
     const status = error.response?.status;
     const url = originalRequest.url || '';
 
@@ -31,11 +30,11 @@ api.interceptors.response.use(
       url.includes('/auth/register') ||
       url.includes('/auth/refresh');
 
-    if (status === 401 && errorCode === 'TOKEN_EXPIRED' && !isAuthEndpoint) {
+    if (status === 401 && !isAuthEndpoint) {
       originalRequest._retry = true;
 
       try {
-        // Deduplication: If 3 requests fail at the same time, they all await the SAME refresh call
+        // Deduplication: If multiple requests fail at the same time, they all await the SAME refresh call
         if (!refreshPromise) {
           refreshPromise = api.post('/auth/refresh').finally(() => {
             refreshPromise = null;

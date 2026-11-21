@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -12,13 +12,16 @@ import {
   Clock,
   Copy,
   FileCode,
+  Layers,
   Loader2,
   Maximize2,
   Minimize2,
   Play,
   Plus,
+  SplitSquareVertical,
   Terminal,
   X,
+  XCircle,
 } from 'lucide-react';
 import type { ColumnId } from '@/components/room/room.constants';
 import type { ArenaPlatform, ExecutionResult, TestCaseItem } from '@codev/shared';
@@ -110,6 +113,55 @@ function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) 
   );
 }
 
+/** A dark-themed scrollable text block identical to the Codeforces example box. */
+function CodeBlock({
+  content,
+  placeholder,
+  editable = false,
+  onChange,
+  disabled = false,
+}: {
+  content: string;
+  placeholder?: string;
+  editable?: boolean;
+  onChange?: (v: string) => void;
+  disabled?: boolean;
+}) {
+  if (editable) {
+    return (
+      <textarea
+        value={content}
+        onChange={(e) => onChange?.(e.target.value)}
+        disabled={disabled}
+        placeholder={placeholder}
+        className="flex-1 w-full resize-none bg-transparent font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none leading-relaxed custom-scrollbar"
+      />
+    );
+  }
+  return (
+    <pre className="flex-1 font-mono text-xs text-foreground leading-relaxed whitespace-pre-wrap break-words overflow-y-auto custom-scrollbar">
+      {content || <span className="text-muted-foreground/50 italic">{placeholder}</span>}
+    </pre>
+  );
+}
+
+function VerdictBadge({ verdict }: { verdict: Verdict }) {
+  if (!verdict) return null;
+  const isAC = verdict === 'ACCEPTED';
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide ${
+        isAC
+          ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/25'
+          : 'bg-destructive/15 text-destructive border border-destructive/25'
+      }`}
+    >
+      {isAC ? <CircleCheck size={10} /> : <CircleX size={10} />}
+      {isAC ? 'Accepted' : 'Wrong Answer'}
+    </span>
+  );
+}
+
 // ─── Props Interface ────────────────────────────────────────────────────────
 
 interface IoColumnProps {
@@ -179,8 +231,22 @@ export function IoColumn({
 }: IoColumnProps) {
   const isRightEdge = colIndex === totalColumns - 1;
   const showFolded = isIoFolded && maximizedColumn !== 'io';
+  const isLeetCode = arenaPlatform === 'LEETCODE';
+  const isCodeforces = arenaPlatform === 'CODEFORCES' || arenaPlatform === 'STANDARD_IO';
   const hasArenaCases = Boolean(testCases && testCases.length > 0) || Boolean(arenaPlatform);
   const handleTriggerRun = onRunAllCases || onRunCode;
+
+  const defaultLayout = isLeetCode
+    ? 'tabbed'
+    : isCodeforces
+      ? 'split'
+      : (testCases && testCases.length > 0 ? 'tabbed' : 'scratchpad');
+
+  const [layoutView, setLayoutView] = useState<'tabbed' | 'split' | 'scratchpad'>(defaultLayout);
+
+  useEffect(() => {
+    setLayoutView(defaultLayout);
+  }, [defaultLayout]);
 
   // Tab state: 'testcase' (for input editing) vs 'result' (for execution verdicts & diffs)
   const [activeTab, setActiveTab] = useState<'testcase' | 'result'>('testcase');
@@ -191,12 +257,84 @@ export function IoColumn({
   const expectedOutput = propExpectedOutput !== undefined ? propExpectedOutput : localExpectedOutput;
   const handleSetExpectedOutput = onExpectedOutputChange || setLocalExpectedOutput;
 
+  // 3-way vertical split for Codeforces 3-block mode (input, expected, actual)
+  const cfSplitRef = useRef({ input: 34, expected: 33, actual: 33 });
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      dragCleanupRef.current?.();
+    };
+  }, []);
+
+  const handleStartCfResize = (
+    e: React.PointerEvent,
+    splitter: 'input-expected' | 'expected-actual'
+  ) => {
+    e.preventDefault();
+    const container = ioContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    if (rect.height <= 0) return;
+
+    const startY = e.clientY;
+    const startInput = cfSplitRef.current.input;
+    const startExpected = cfSplitRef.current.expected;
+    const startActual = cfSplitRef.current.actual;
+
+    let rafId = 0;
+    const onMove = (ev: PointerEvent) => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const deltaPct = ((ev.clientY - startY) / rect.height) * 100;
+        if (splitter === 'input-expected') {
+          const combined = startInput + startExpected;
+          const nextInput = Math.min(combined - 12, Math.max(12, startInput + deltaPct));
+          const nextExpected = combined - nextInput;
+          cfSplitRef.current.input = nextInput;
+          cfSplitRef.current.expected = nextExpected;
+          container.style.setProperty('--cf-input-h', `${nextInput.toFixed(2)}%`);
+          container.style.setProperty('--cf-expected-h', `${nextExpected.toFixed(2)}%`);
+        } else {
+          const combined = startExpected + startActual;
+          const nextExpected = Math.min(combined - 12, Math.max(12, startExpected + deltaPct));
+          const nextActual = combined - nextExpected;
+          cfSplitRef.current.expected = nextExpected;
+          cfSplitRef.current.actual = nextActual;
+          container.style.setProperty('--cf-expected-h', `${nextExpected.toFixed(2)}%`);
+          container.style.setProperty('--cf-actual-h', `${nextActual.toFixed(2)}%`);
+        }
+      });
+    };
+
+    const onUp = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      dragCleanupRef.current = null;
+    };
+
+    dragCleanupRef.current = onUp;
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const handleResetCfSplit = () => {
+    cfSplitRef.current = { input: 34, expected: 33, actual: 33 };
+    const container = ioContainerRef.current;
+    if (container) {
+      container.style.setProperty('--cf-input-h', '34%');
+      container.style.setProperty('--cf-expected-h', '33%');
+      container.style.setProperty('--cf-actual-h', '33%');
+    }
+  };
+
   // Auto-switch to 'result' tab when execution starts or finishes
   useEffect(() => {
-    if (isRunning) {
+    if (isRunning && layoutView === 'tabbed') {
       setActiveTab('result');
     }
-  }, [isRunning]);
+  }, [isRunning, layoutView]);
 
   // Determine active result specifically for currently viewed test case
   const activeCaseResult = useMemo(() => {
@@ -225,6 +363,11 @@ export function IoColumn({
     if (!activeCaseResult || activeCaseResult.status !== 'SUCCESS') return null;
     return computeVerdict(activeCaseResult.stdout, activeExpected);
   }, [activeCaseResult, activeExpected]);
+
+  const activeActualOutput = useMemo(() => {
+    if (!activeCaseResult) return '';
+    return [activeCaseResult.stdout, activeCaseResult.stderr].filter(Boolean).join('\n');
+  }, [activeCaseResult]);
 
   // Overall batch statistics
   const batchStats = useMemo(() => {
@@ -283,14 +426,14 @@ export function IoColumn({
           <button
             type="button"
             onClick={() => {
-              setActiveTab('result');
+              if (layoutView === 'tabbed') setActiveTab('result');
               onToggleIoFold(false);
             }}
             className="py-2.5 px-1 rounded-md flex flex-col items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer"
           >
             <CircleCheck size={13} className="text-emerald-500 shrink-0" />
             <span className="[writing-mode:vertical-rl] tracking-wide text-[11px] whitespace-nowrap">
-              Test Result
+              {layoutView === 'split' ? 'Test Cases' : 'Test Result'}
             </span>
           </button>
 
@@ -299,14 +442,14 @@ export function IoColumn({
           <button
             type="button"
             onClick={() => {
-              setActiveTab('testcase');
+              if (layoutView === 'tabbed') setActiveTab('testcase');
               onToggleIoFold(false);
             }}
             className="py-2.5 px-1 rounded-md flex flex-col items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer"
           >
             <Terminal size={13} className="text-sky-500 shrink-0" />
             <span className="[writing-mode:vertical-rl] tracking-wide text-[11px] whitespace-nowrap">
-              Testcase
+              {layoutView === 'split' ? 'Input (stdin)' : 'Testcase'}
             </span>
           </button>
         </div>
@@ -314,9 +457,35 @@ export function IoColumn({
     );
   }
 
+  const layoutToggleBtn = hasArenaCases && (
+    <button
+      type="button"
+      onClick={() => setLayoutView((v) => (v === 'tabbed' ? 'split' : 'tabbed'))}
+      className="h-6 px-1.5 rounded flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer transition-colors"
+      title={
+        layoutView === 'tabbed'
+          ? 'Switch to 3-block split layout (Codeforces mode)'
+          : 'Switch to tabbed layout (LeetCode mode)'
+      }
+    >
+      {layoutView === 'tabbed' ? (
+        <>
+          <SplitSquareVertical size={12} className="text-violet-400" />
+          <span className="hidden sm:inline">Split</span>
+        </>
+      ) : (
+        <>
+          <Layers size={12} className="text-sky-400" />
+          <span className="hidden sm:inline">Tabs</span>
+        </>
+      )}
+    </button>
+  );
+
   // Shared panel controls
   const panelControls = (
     <div className="flex items-center gap-1 shrink-0">
+      {layoutToggleBtn}
       <button
         type="button"
         onClick={onToggleMaximize}
@@ -342,7 +511,7 @@ export function IoColumn({
   //  1. LEETCODE ARENA / MULTI-CASE TABBED MODE
   //  Solves spatial constraints by splitting Input vs Result into two full-height tabs
   // ════════════════════════════════════════════════════════════════════════════
-  if (hasArenaCases) {
+  if (layoutView === 'tabbed') {
     return (
       <div
         ref={ioContainerRef}
@@ -408,14 +577,14 @@ export function IoColumn({
                 onClick={handleTriggerRun}
                 disabled={isRunning}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 active:scale-98 transition-all cursor-pointer shadow-xs disabled:opacity-50"
-                title="Run test cases (Ctrl+Enter)"
+                title="Run all test cases (Ctrl+Enter)"
               >
                 {isRunning ? (
                   <Loader2 size={11} className="animate-spin text-emerald-400" />
                 ) : (
                   <Play size={11} className="fill-current text-emerald-400" />
                 )}
-                <span>Run</span>
+                <span>Run All</span>
               </button>
             )}
 
@@ -473,52 +642,57 @@ export function IoColumn({
               </div>
             )}
 
-            {/* Input editor pane — gets full vertical height */}
-            <div className="flex-1 min-h-0 flex flex-col p-3 gap-2 overflow-hidden">
-              <div className="flex items-center justify-between text-xs text-muted-foreground shrink-0 select-none">
-                <div className="flex items-center gap-1.5 font-mono">
-                  <FileCode size={13} className="text-sky-400 shrink-0" />
-                  <span className="font-semibold text-foreground font-sans">Input</span>
-                  <span className="text-[10px] text-muted-foreground">(stdin tokens)</span>
+            {/* Input & Expected Output cards — compact natural flow matching LeetCode workspace */}
+            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3.5 space-y-3.5">
+              {/* Input Card */}
+              <div className="rounded-lg border border-border/60 bg-card/40 p-3 flex flex-col gap-2 shadow-2xs">
+                <div className="flex items-center justify-between text-xs text-muted-foreground select-none">
+                  <div className="flex items-center gap-1.5 font-mono">
+                    <FileCode size={13} className="text-sky-400 shrink-0" />
+                    <span className="font-semibold text-foreground font-sans">Input</span>
+                    <span className="text-[10px] text-muted-foreground">(stdin tokens)</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {/[\[\]=]/.test(stdin) && !isEffectiveReadOnly && (
+                      <button
+                        type="button"
+                        onClick={() => onStdinChange(flattenLeetCodeInput(stdin))}
+                        className="text-[10px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded cursor-pointer hover:bg-amber-500/20 transition-colors"
+                        title="Strip LeetCode parameter labels and brackets into clean space-separated tokens"
+                      >
+                        Clean Format
+                      </button>
+                    )}
+                    {stdin && !isEffectiveReadOnly && (
+                      <button
+                        type="button"
+                        onClick={() => onStdinChange('')}
+                        className="text-[11px] font-mono text-muted-foreground hover:text-foreground px-1.5 cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <CopyButton text={stdin} />
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  {/[\[\]=]/.test(stdin) && !isEffectiveReadOnly && (
-                    <button
-                      type="button"
-                      onClick={() => onStdinChange(flattenLeetCodeInput(stdin))}
-                      className="text-[10px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded cursor-pointer hover:bg-amber-500/20 transition-colors"
-                      title="Strip LeetCode parameter labels and brackets into clean space-separated tokens"
-                    >
-                      Clean Format
-                    </button>
-                  )}
-                  {stdin && !isEffectiveReadOnly && (
-                    <button
-                      type="button"
-                      onClick={() => onStdinChange('')}
-                      className="text-[11px] font-mono text-muted-foreground hover:text-foreground px-1.5 cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  )}
-                  <CopyButton text={stdin} />
-                </div>
+
+                <textarea
+                  value={stdin}
+                  onChange={(e) => onStdinChange(e.target.value)}
+                  disabled={isEffectiveReadOnly}
+                  placeholder="Enter testcase input tokens here (e.g. [2,7,11,15] 9)..."
+                  rows={Math.min(8, Math.max(3, stdin.split('\n').length))}
+                  className="w-full min-h-[96px] max-h-[220px] p-2.5 rounded-md border border-border/50 bg-background/80 font-mono text-xs text-foreground placeholder:text-muted-foreground/40 resize-y focus:outline-none focus:border-primary/60 custom-scrollbar leading-relaxed"
+                />
               </div>
 
-              <textarea
-                value={stdin}
-                onChange={(e) => onStdinChange(e.target.value)}
-                disabled={isEffectiveReadOnly}
-                placeholder="Enter testcase input tokens here (e.g. [2,7,11,15] 9)..."
-                className="flex-1 w-full p-3 rounded-lg border border-border/60 bg-background font-mono text-xs text-foreground placeholder:text-muted-foreground/40 resize-none focus:outline-none focus:border-primary/60 custom-scrollbar leading-relaxed"
-              />
-
-              {/* Collapsible / Optional Target Expected Output */}
-              <div className="flex flex-col gap-1.5 shrink-0 pt-1">
+              {/* Expected Output Card (positioned immediately below Input) */}
+              <div className="rounded-lg border border-border/60 bg-card/40 p-3 flex flex-col gap-2 shadow-2xs">
                 <div className="flex items-center justify-between text-xs text-muted-foreground select-none">
-                  <span className="font-semibold font-sans text-foreground flex items-center gap-1">
-                    <Check size={12} className="text-violet-400" />
-                    Target Expected Output
+                  <span className="font-semibold font-sans text-foreground flex items-center gap-1.5">
+                    <Check size={13} className="text-emerald-400" />
+                    Expected Output
+                    <span className="text-[10px] text-muted-foreground font-normal font-mono">(optional target)</span>
                   </span>
                   <CopyButton text={expectedOutput} />
                 </div>
@@ -528,7 +702,7 @@ export function IoColumn({
                   onChange={(e) => handleSetExpectedOutput(e.target.value)}
                   disabled={isEffectiveReadOnly}
                   placeholder="Expected return value (e.g. [0,1] or 42)..."
-                  className="w-full px-3 py-1.5 rounded-lg border border-border/60 bg-background font-mono text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/60"
+                  className="w-full px-3 py-2 rounded-md border border-border/50 bg-background/80 font-mono text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/60"
                 />
               </div>
             </div>
@@ -786,7 +960,287 @@ export function IoColumn({
   }
 
   // ════════════════════════════════════════════════════════════════════════════
-  //  2. CLASSIC SCRATCHPAD MODE (Output top 58%, Stdin bottom 42%)
+  //  2. CODEFORCES / STANDARD_IO 3-BLOCK SPLIT MODE
+  //  3-block vertical stack: [Input] | [Expected Output] | [Actual Output]
+  //  Matches the Codeforces example box dark style with resizable splitters.
+  // ════════════════════════════════════════════════════════════════════════════
+  if (layoutView === 'split') {
+    return (
+      <div
+        ref={ioContainerRef}
+        style={{ order: flexOrder, flex: '1 1 var(--col-io-w, 32%)' }}
+        className={`${isHidden ? 'hidden' : 'flex'} min-h-0 min-w-0 h-full flex-col gap-1.5 overflow-hidden`}
+      >
+        {/* ── Testcase Tabs Bar (Multi-case management) ── */}
+        {testCases && testCases.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-0.5 px-0.5 shrink-0 select-none">
+            {testCases.map((tc, idx) => {
+              const isActive = idx === (activeCaseIndex ?? 0);
+              const tcResult = caseResults?.[idx];
+              const tcVerdict =
+                tcResult && tcResult.status === 'SUCCESS' ? computeVerdict(tcResult.stdout, tc.output) : null;
+              return (
+                <div
+                  key={tc.id || idx}
+                  onClick={() => onSelectCase?.(idx)}
+                  className={`group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer border ${
+                    isActive
+                      ? 'bg-card border-primary/50 text-foreground font-semibold shadow-xs'
+                      : 'bg-muted/30 border-border/40 text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                  }`}
+                >
+                  {tcVerdict === 'ACCEPTED' && (
+                    <Check size={11} className="text-emerald-500 shrink-0" />
+                  )}
+                  {tcVerdict === 'WRONG_ANSWER' && (
+                    <X size={11} className="text-destructive shrink-0" />
+                  )}
+                  {tcResult && tcResult.status !== 'SUCCESS' && !tcVerdict && (
+                    <CircleX size={11} className="text-amber-500 shrink-0" />
+                  )}
+                  <span className="truncate max-w-[90px]">{tc.name || `Case ${idx + 1}`}</span>
+                  {testCases.length > 1 && !isEffectiveReadOnly && onRemoveCase && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveCase(idx);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 -mr-1 rounded hover:bg-destructive/20 hover:text-destructive transition-all cursor-pointer"
+                      title="Delete testcase"
+                    >
+                      <X size={10} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
+            {!isEffectiveReadOnly && onAddCase && (
+              <button
+                type="button"
+                onClick={onAddCase}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 border border-dashed border-border/70 transition-colors cursor-pointer shrink-0"
+                title="Add new testcase"
+              >
+                <Plus size={11} />
+                <span>Case</span>
+              </button>
+            )}
+
+            {handleTriggerRun && (
+              <button
+                type="button"
+                onClick={handleTriggerRun}
+                disabled={isRunning}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-mono font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors cursor-pointer shrink-0 ml-auto"
+                title="Run test cases (Ctrl+Enter)"
+              >
+                {isRunning ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : (
+                  <Play size={10} className="fill-current" />
+                )}
+                <span>Run{testCases.length > 1 ? ' All' : ''}</span>
+              </button>
+            )}
+
+            <div className={handleTriggerRun ? 'shrink-0' : 'ml-auto shrink-0'}>
+              {panelControls}
+            </div>
+          </div>
+        )}
+
+        {/* ── INPUT block ───────────────────────────────────────────── */}
+        <div
+          style={{ flex: '1 1 var(--cf-input-h, 34%)' }}
+          className="min-h-0 rounded-xl border border-border/70 bg-card flex flex-col overflow-hidden shadow-xs"
+        >
+          <div className="h-9 px-2.5 border-b border-border/60 bg-muted/35 flex items-center justify-between gap-2 shrink-0 select-none">
+            <div className="flex items-center gap-1.5 text-xs font-mono">
+              <FileCode size={13} className="text-sky-500 shrink-0" />
+              <span className="font-semibold text-foreground font-sans">input</span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              {/[\[\]=]/.test(stdin) && !isEffectiveReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => onStdinChange(flattenLeetCodeInput(stdin))}
+                  className="text-[10px] font-mono text-amber-500 hover:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                  title="Strip parameter labels and brackets into clean space-separated stream input"
+                >
+                  Clean Format
+                </button>
+              )}
+              {stdin && !isEffectiveReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => onStdinChange('')}
+                  className="text-[11px] font-mono text-muted-foreground hover:text-foreground cursor-pointer px-1.5"
+                >
+                  Clear
+                </button>
+              )}
+              <CopyButton text={stdin} />
+              {(!testCases || testCases.length === 0) && panelControls}
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 p-2.5 bg-background/70 flex flex-col overflow-hidden">
+            <CodeBlock
+              content={stdin}
+              editable
+              onChange={onStdinChange}
+              disabled={isEffectiveReadOnly}
+              placeholder="Paste testcase input here…"
+            />
+          </div>
+        </div>
+
+        {/* ── Drag splitter (input ↕ expected) ─────────────────────── */}
+        <div
+          onPointerDown={(e) => handleStartCfResize(e, 'input-expected')}
+          onDoubleClick={handleResetCfSplit}
+          title="Drag to resize Input and Expected Output (double-click to reset)"
+          className="group h-2 flex items-center justify-center shrink-0 cursor-row-resize select-none hover:bg-primary/20 active:bg-primary/40 transition-colors"
+        >
+          <div className="h-0.5 w-8 rounded-full bg-border/80 group-hover:bg-primary transition-colors" />
+        </div>
+
+        {/* ── EXPECTED OUTPUT block ─────────────────────────────────── */}
+        <div
+          style={{ flex: '1 1 var(--cf-expected-h, 33%)' }}
+          className="min-h-0 rounded-xl border border-border/70 bg-card flex flex-col overflow-hidden shadow-xs"
+        >
+          <div className="h-9 px-2.5 border-b border-border/60 bg-muted/35 flex items-center justify-between gap-2 shrink-0 select-none">
+            <div className="flex items-center gap-1.5 text-xs font-mono">
+              <Check size={13} className="text-violet-400 shrink-0" />
+              <span className="font-semibold text-foreground font-sans">output</span>
+              <span className="text-muted-foreground text-[10px]">(expected)</span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              {activeExpected && !isEffectiveReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => handleSetExpectedOutput('')}
+                  className="text-[11px] font-mono text-muted-foreground hover:text-foreground cursor-pointer px-1.5"
+                >
+                  Clear
+                </button>
+              )}
+              <CopyButton text={activeExpected} />
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 p-2.5 bg-background/70 flex flex-col overflow-hidden">
+            <CodeBlock
+              content={activeExpected}
+              editable
+              onChange={handleSetExpectedOutput}
+              disabled={isEffectiveReadOnly}
+              placeholder="Paste expected output here to compare…"
+            />
+          </div>
+        </div>
+
+        {/* ── Drag splitter (expected ↕ actual) ─────────────────────── */}
+        <div
+          onPointerDown={(e) => handleStartCfResize(e, 'expected-actual')}
+          onDoubleClick={handleResetCfSplit}
+          title="Drag to resize Expected and Actual Output (double-click to reset)"
+          className="group h-2 flex items-center justify-center shrink-0 cursor-row-resize select-none hover:bg-primary/20 active:bg-primary/40 transition-colors"
+        >
+          <div className="h-0.5 w-8 rounded-full bg-border/80 group-hover:bg-primary transition-colors" />
+        </div>
+
+        {/* ── ACTUAL OUTPUT block ───────────────────────────────────── */}
+        <div
+          style={{ flex: '1 1 var(--cf-actual-h, 33%)' }}
+          className="min-h-0 rounded-xl border border-border/70 bg-card flex flex-col overflow-hidden shadow-xs"
+        >
+          <div className="h-9 px-2.5 border-b border-border/60 bg-muted/35 flex items-center justify-between gap-2 shrink-0 select-none">
+            <div className="flex items-center gap-1.5 text-xs font-mono min-w-0">
+              <Terminal size={13} className="text-emerald-500 shrink-0" />
+              <span className="font-semibold text-foreground font-sans">output</span>
+              <span className="text-muted-foreground text-[10px]">(actual)</span>
+
+              {isRunning && (
+                <span className="flex items-center gap-1 text-[11px] text-amber-500 truncate ml-1">
+                  <Loader2 size={11} className="animate-spin shrink-0" />
+                  <span className="truncate">Running…</span>
+                </span>
+              )}
+
+              {!isRunning && activeCaseResult && (
+                <div className="flex items-center gap-1.5 text-[11px] ml-1 flex-wrap">
+                  <VerdictBadge verdict={activeVerdict} />
+                  {activeCaseResult.status !== 'SUCCESS' && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-destructive/15 text-destructive border border-destructive/25 flex items-center gap-1">
+                      <XCircle size={10} />
+                      {activeCaseResult.status}
+                    </span>
+                  )}
+                  <span className="text-muted-foreground flex items-center gap-0.5">
+                    <Clock size={10} />
+                    {activeCaseResult.executionTimeMs} ms
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {activeCaseResult && activeActualOutput && <CopyButton text={activeActualOutput} />}
+              {activeCaseResult && (
+                <button
+                  type="button"
+                  onClick={onClearOutput}
+                  className="text-[11px] font-mono text-muted-foreground hover:text-foreground px-1.5 cursor-pointer"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 p-2.5 bg-background/70 flex flex-col overflow-y-auto custom-scrollbar">
+            {!activeCaseResult && !isRunning && (
+              <div className="h-full flex items-center justify-center text-muted-foreground/50 text-xs select-none text-center">
+                Run your code to see output here
+                <br />
+                <span className="text-[10px] font-mono opacity-60">(Ctrl+Enter)</span>
+              </div>
+            )}
+            {isRunning && !activeCaseResult && (
+              <div className="h-full flex items-center justify-center text-muted-foreground gap-2 text-xs">
+                <Loader2 size={14} className="animate-spin text-primary" />
+                <span>Compiling and running ({runningBy || 'you'})…</span>
+              </div>
+            )}
+            {activeCaseResult && (
+              <div className="space-y-1">
+                {activeCaseResult.stdout && (
+                  <pre className="font-mono text-xs text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                    {activeCaseResult.stdout}
+                  </pre>
+                )}
+                {activeCaseResult.stderr && (
+                  <pre className="font-mono text-xs text-destructive leading-relaxed whitespace-pre-wrap break-words">
+                    {activeCaseResult.stderr}
+                  </pre>
+                )}
+                {!activeCaseResult.stdout && !activeCaseResult.stderr && (
+                  <span className="text-muted-foreground italic text-xs">
+                    Program finished with no output (exit {activeCaseResult.exitCode ?? 0}).
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  3. CLASSIC SCRATCHPAD MODE (Output top 58%, Stdin bottom 42%)
   //  For clean, blank scratchpad rooms without testcases
   // ════════════════════════════════════════════════════════════════════════════
   return (

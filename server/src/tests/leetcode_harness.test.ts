@@ -85,38 +85,76 @@ public:
 };
 `.trim();
 
+  // Buggy User Code with hardcoded mp[nums[i]] = 1
+  const buggyTwoSumSolution = `
+#include <vector>
+#include <unordered_map>
+using namespace std;
+
+class Solution {
+public:
+    vector<int> twoSum(vector<int>& nums, int target) {
+        unordered_map<int, int> mp;
+        for (int i = 0; i < (int)nums.size(); ++i) {
+            int complement = target - nums[i];
+            if (mp.count(complement)) {
+                return {mp[complement], i};
+            }
+            mp[nums[i]] = 1; // Defect: hardcoded 1 instead of loop index i
+        }
+        return {};
+    }
+};
+`.trim();
+
   const wrappedCode = buildTwoSumWrappedCode(userTwoSumSolution);
 
   const testCases = [
     {
-      name: 'Test 1: Standard Case (Example 1)',
+      name: 'Case 1: Standard Case (Example 1)',
       rawInput: '[2,7,11,15]\n9',
       expectedOutput: '[0,1]',
     },
     {
-      name: 'Test 2: Standard Case (Example 2)',
+      name: 'Case 2: Non-zero start (Example 2)',
       rawInput: '[3,2,4]\n6',
       expectedOutput: '[1,2]',
     },
     {
-      name: 'Test 3: Duplicate Numbers (Example 3)',
+      name: 'Case 3: Duplicate Numbers (Example 3)',
       rawInput: '[3,3]\n6',
       expectedOutput: '[0,1]',
     },
     {
-      name: 'Test 4: Negative Numbers',
+      name: 'Case 4: High Index Offset',
+      rawInput: '[1,5,3,7]\n10',
+      expectedOutput: '[2,3]',
+    },
+    {
+      name: 'Case 5: Late Pair',
+      rawInput: '[10,20,30,40,50]\n90',
+      expectedOutput: '[3,4]',
+    },
+    {
+      name: 'Case 6: Zeros & Index 0',
+      rawInput: '[0,4,3,0]\n0',
+      expectedOutput: '[0,3]',
+    },
+    {
+      name: 'Case 7: Negative Numbers',
       rawInput: '[-3,4,3,90]\n0',
       expectedOutput: '[0,2]',
     },
     {
-      name: 'Test 5: Large Numbers & Spacing',
-      rawInput: '[ 1000 , 5000 , 2000 , 8000 ]\n7000',
-      expectedOutput: '[1,2]',
+      name: 'Case 8: Bookend Pair',
+      rawInput: '[5,1,9,2,7]\n12',
+      expectedOutput: '[0,4]',
     },
   ];
 
   let passedCount = 0;
 
+  console.log('▶ [Positive Test] Running Correct C++ Solution across 8 Canonical Test Cases:');
   for (const tc of testCases) {
     console.log(`▶ Running ${tc.name}...`);
     console.log(`  Raw Input: ${JSON.stringify(tc.rawInput)}`);
@@ -144,8 +182,38 @@ public:
     }
   }
 
-  // 6. Test Error Line Reporting
-  console.log('▶ Test 6: Verifying Compiler Error Line Accuracy');
+  // Negative Verification: Buggy C++ Code with mp[nums[i]] = 1
+  console.log('▶ [Negative Test] Running Buggy C++ Solution (mp[nums[i]] = 1) across 8 Canonical Test Cases:');
+  const buggyWrappedCode = buildTwoSumWrappedCode(buggyTwoSumSolution);
+  let buggyPassedCount = 0;
+
+  for (const tc of testCases) {
+    const result = await executeCode({
+      language: 'cpp',
+      compilerProfile: 'o3',
+      code: buggyWrappedCode,
+      stdin: tc.rawInput,
+    });
+    const actualOutput = result.stdout.trim();
+    const isMatch = actualOutput === tc.expectedOutput;
+
+    if (isMatch) {
+      buggyPassedCount++;
+      console.log(`  ⚠️ Buggy code accidentally matched ${tc.name}: Got ${actualOutput} (coincidental index 1)`);
+    } else {
+      console.log(`  ✅ Buggy code correctly failed ${tc.name}: Expected ${tc.expectedOutput}, got ${actualOutput}`);
+    }
+  }
+
+  const buggyFailedVerification = buggyPassedCount < testCases.length;
+  if (buggyFailedVerification) {
+    console.log(`\n  ✅ Negative verification PASSED: Buggy C++ code failed verification (${buggyPassedCount}/${testCases.length} passed, ${testCases.length - buggyPassedCount} failed)\n`);
+  } else {
+    console.error(`\n  ❌ Negative verification FAILED: Buggy C++ code unexpectedly passed all ${testCases.length} cases!\n`);
+  }
+
+  // Test Error Line Reporting
+  console.log('▶ Verifying Compiler Error Line Accuracy');
   const faultyUserCode = `
 #include <vector>
 using namespace std;
@@ -178,11 +246,12 @@ public:
   }
 
   console.log('=====================================================');
-  console.log(`🏁 Experiment Results: ${passedCount}/6 Tests Passed`);
+  console.log(`🏁 Experiment Results: ${passedCount}/9 Tests Passed (8/8 canonical Two Sum cases + 1 compiler error line check)`);
+  console.log(`🛡️ Negative Verification: ${buggyFailedVerification ? 'PASSED (buggy code failed suite)' : 'FAILED'}`);
   console.log('=====================================================');
 
-  if (passedCount === 6) {
-    console.log('🎉 Verdict: The LeetCode C++ Wrapper Harness works cleanly!');
+  if (passedCount === 9 && buggyFailedVerification) {
+    console.log('🎉 Verdict: The LeetCode C++ Wrapper Harness works cleanly and catches faulty implementations!');
   } else {
     process.exit(1);
   }

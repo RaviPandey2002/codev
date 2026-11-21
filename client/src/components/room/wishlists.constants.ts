@@ -37,6 +37,12 @@ export const CURATED_WISHLISTS: CuratedWishlist[] = [
         sampleCases: [
           { id: '1', name: 'Case 1', input: '[2,7,11,15]\n9', output: '[0,1]' },
           { id: '2', name: 'Case 2', input: '[3,2,4]\n6', output: '[1,2]' },
+          { id: '3', name: 'Case 3', input: '[3,3]\n6', output: '[0,1]' },
+          { id: '4', name: 'Case 4', input: '[1,5,3,7]\n10', output: '[2,3]' },
+          { id: '5', name: 'Case 5', input: '[10,20,30,40,50]\n90', output: '[3,4]' },
+          { id: '6', name: 'Case 6', input: '[0,4,3,0]\n0', output: '[0,3]' },
+          { id: '7', name: 'Case 7', input: '[-3,4,3,90]\n0', output: '[0,2]' },
+          { id: '8', name: 'Case 8', input: '[5,1,9,2,7]\n12', output: '[0,4]' },
         ],
         codeSnippets: [
           {

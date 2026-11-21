@@ -23,7 +23,7 @@ function setAuthCookies(
     secure: isProd,
     sameSite: 'lax',
     path: '/',
-    maxAge: 15 * 60, // 15 minutes in seconds
+    maxAge: 7 * 24 * 60 * 60, // Aligned with session lifetime so browser does not drop prematurely
   });
 }
 
