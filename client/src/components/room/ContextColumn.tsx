@@ -1,27 +1,35 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import DOMPurify from 'dompurify';
 import {
   BookOpen,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Circle,
   Clock,
   Code2,
   Cpu,
   ExternalLink,
   FileText,
   Layers,
+  ListOrdered,
   Loader2,
   Maximize2,
   Minimize2,
+  Pause,
   Play,
+  Plus,
+  RotateCcw,
   Sparkles,
   Tag,
+  Trash2,
   X,
 } from 'lucide-react';
 import { importProblemApi } from '@/api/problems';
 import { type ColumnId, DEFAULT_PROBLEM_NOTES } from '@/components/room/room.constants';
+import { CURATED_WISHLISTS, type CuratedWishlist } from '@/components/room/wishlists.constants';
 import { getApiErrorMessage } from '@/lib/api';
-import type { ArenaPlatform, ProblemData } from '@codev/shared';
+import type { ArenaPlatform, ProblemData, QueueProblemItem, QueueProblemStatus } from '@codev/shared';
 
 // ─── Utility ────────────────────────────────────────────────────────────────
 
@@ -72,6 +80,12 @@ interface ContextColumnProps {
   onProblemDataChange?: (data: ProblemData | null) => void;
   onLoadSampleCase?: (input: string, output: string) => void;
   onLoadAllCases?: (cases: Array<{ input: string; output?: string }>) => void;
+  queue?: QueueProblemItem[];
+  activeProblemIndex?: number;
+  onSelectProblem?: (index: number) => void;
+  onAddProblem?: (problem: ProblemData) => void;
+  onRemoveProblem?: (id: string) => void;
+  onUpdateStatus?: (id: string, status: QueueProblemStatus) => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -92,13 +106,79 @@ export function ContextColumn({
   onProblemDataChange,
   onLoadSampleCase,
   onLoadAllCases,
+  queue = [],
+  activeProblemIndex = 0,
+  onSelectProblem,
+  onAddProblem,
+  onRemoveProblem,
+  onUpdateStatus,
 }: ContextColumnProps) {
   const isLeftEdge = colIndex === 0;
   const showFolded = isContextFolded && maximizedColumn !== 'context';
   const isCpMode = Boolean(arenaPlatform);
 
-  // Active view tab: 'PROBLEM' or 'NOTES'
-  const [activeTab, setActiveTab] = useState<'PROBLEM' | 'NOTES'>(isCpMode ? 'PROBLEM' : 'NOTES');
+  // Active view tab: 'PROBLEM' | 'SESSION' | 'NOTES'
+  const [activeTab, setActiveTab] = useState<'PROBLEM' | 'SESSION' | 'NOTES'>(isCpMode ? 'PROBLEM' : 'NOTES');
+
+  // Session timer state
+  const [sessionSeconds, setSessionSeconds] = useState(0);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [sessionUrlInput, setSessionUrlInput] = useState('');
+  const [isSessionImporting, setIsSessionImporting] = useState(false);
+  const [sessionImportError, setSessionImportError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (isTimerRunning) {
+      interval = setInterval(() => {
+        setSessionSeconds((s) => s + 1);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isTimerRunning]);
+
+  const formatSessionTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleSessionImportAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = sessionUrlInput.trim();
+    if (!trimmed) return;
+
+    try {
+      setIsSessionImporting(true);
+      setSessionImportError(null);
+      const isLeetCode = trimmed.includes('leetcode.com');
+      const data = await importProblemApi({
+        urlOrId: trimmed,
+        platform: isLeetCode ? 'LEETCODE' : (arenaPlatform || 'CODEFORCES'),
+      });
+      onAddProblem?.(data);
+      setSessionUrlInput('');
+    } catch (err) {
+      setSessionImportError(getApiErrorMessage(err, 'Failed to import problem'));
+    } finally {
+      setIsSessionImporting(false);
+    }
+  };
+
+  const handlePullWishlist = (wishlist: CuratedWishlist) => {
+    for (const p of wishlist.problems) {
+      onAddProblem?.({
+        title: p.title,
+        platform: p.platform,
+        url: p.urlOrId,
+        difficulty: p.difficulty,
+        sampleCases: p.sampleCases,
+        description: `Imported from curated wishlist: ${wishlist.title}`,
+      });
+    }
+  };
 
   // Problem URL import state
   const [urlInput, setUrlInput] = useState('');
@@ -200,6 +280,25 @@ export function ContextColumn({
 
         <div className="w-4 h-[1px] bg-border/50" />
 
+        {isCpMode && (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('SESSION');
+              onToggleContextFold(false);
+            }}
+            className="py-2.5 px-1 rounded-md flex flex-col items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer"
+            title="Practice Session"
+          >
+            <ListOrdered size={13} className="text-amber-500 shrink-0" />
+            <span className="[writing-mode:vertical-rl] tracking-wide text-[11px] whitespace-nowrap">
+              Session
+            </span>
+          </button>
+        )}
+
+        <div className="w-4 h-[1px] bg-border/50" />
+
         <button
           type="button"
           onClick={() => {
@@ -241,6 +340,26 @@ export function ContextColumn({
             >
               <BookOpen size={12} className="text-sky-500" />
               <span>Problem</span>
+            </button>
+          )}
+
+          {isCpMode && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('SESSION')}
+              className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                activeTab === 'SESSION'
+                  ? 'bg-background text-foreground font-semibold shadow-xs border border-border/60'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <ListOrdered size={12} className="text-amber-500" />
+              <span>Session</span>
+              {queue && queue.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-500 dark:text-amber-300 text-[10px] font-bold">
+                  {queue.length}
+                </span>
+              )}
             </button>
           )}
 
@@ -564,6 +683,225 @@ export function ContextColumn({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── TAB CONTENT: PRACTICE SESSION & WISHLISTS ───────────────────── */}
+      {activeTab === 'SESSION' && (
+        <div className="flex-1 min-h-0 flex flex-col p-3 space-y-3 overflow-y-auto custom-scrollbar bg-background/40">
+          {/* 1. Session Stopwatch Timer */}
+          <div className="p-2.5 rounded-lg border border-border/70 bg-card/60 flex items-center justify-between">
+            <div className="flex items-center gap-2 font-mono">
+              <Clock className="w-4 h-4 text-amber-500" />
+              <span className="text-sm font-semibold text-foreground tracking-wider">
+                {formatSessionTime(sessionSeconds)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsTimerRunning(!isTimerRunning)}
+                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+                title={isTimerRunning ? 'Pause Session' : 'Start Session'}
+              >
+                {isTimerRunning ? <Pause size={14} /> : <Play size={14} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsTimerRunning(false);
+                  setSessionSeconds(0);
+                }}
+                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+                title="Reset Timer"
+              >
+                <RotateCcw size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* 2. Active Session Playlist */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-muted-foreground px-0.5">
+              <span className="font-semibold text-foreground flex items-center gap-1.5">
+                <ListOrdered size={13} className="text-primary" />
+                <span>Active Playlist</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-muted text-[10px] font-bold text-foreground">
+                  {queue.length}
+                </span>
+              </span>
+              <span className="text-[11px]">
+                {queue.filter((q) => q.status === 'SOLVED').length} of {queue.length} solved
+              </span>
+            </div>
+
+            {queue.length === 0 ? (
+              <div className="py-6 text-center border border-dashed border-border/70 rounded-lg p-4 text-muted-foreground space-y-1">
+                <p className="text-xs font-medium text-foreground">No problems in session</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Add from URL below or pull from a curated wishlist.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {queue.map((item, index) => {
+                  const isActive = index === activeProblemIndex;
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => {
+                        onSelectProblem?.(index);
+                      }}
+                      className={`group p-2.5 rounded-lg border transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-primary/10 border-primary/40 shadow-xs ring-1 ring-primary/20'
+                          : 'bg-card/60 border-border/60 hover:bg-accent/40'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-1.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`w-4 h-4 rounded text-[10px] font-mono font-bold flex items-center justify-center shrink-0 ${
+                              isActive
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-muted text-muted-foreground'
+                            }`}
+                          >
+                            {index + 1}
+                          </span>
+                          <span className={`text-xs font-medium truncate ${isActive ? 'text-primary' : 'text-foreground'}`}>
+                            {item.title}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {/* Status toggle button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const nextStatus = item.status === 'SOLVED' ? 'TODO' : 'SOLVED';
+                              onUpdateStatus?.(item.id, nextStatus);
+                            }}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition-colors ${
+                              item.status === 'SOLVED'
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-muted text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            {item.status === 'SOLVED' ? (
+                              <CheckCircle2 size={11} />
+                            ) : (
+                              <Circle size={11} />
+                            )}
+                            <span>{item.status === 'SOLVED' ? 'Solved' : 'To-Do'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRemoveProblem?.(item.id);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity"
+                            title="Remove from session"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-1.5 pl-6 text-[10px] text-muted-foreground">
+                        <span className="uppercase font-semibold tracking-wider text-muted-foreground">
+                          {item.platform}
+                        </span>
+                        {item.difficulty && (
+                          <span className="px-1 rounded bg-muted/60">{item.difficulty}</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectProblem?.(index);
+                            setActiveTab('PROBLEM');
+                          }}
+                          className="ml-auto text-primary hover:underline"
+                        >
+                          View Statement →
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 3. Add to Session Form */}
+          <form onSubmit={handleSessionImportAdd} className="space-y-1.5 pt-1 border-t border-border/40">
+            <label className="text-[11px] font-semibold text-foreground flex items-center justify-between">
+              <span>Add Problem by URL or ID</span>
+            </label>
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                placeholder="LeetCode URL or CF ID (e.g. 2290H)..."
+                value={sessionUrlInput}
+                onChange={(e) => setSessionUrlInput(e.target.value)}
+                disabled={isSessionImporting}
+                className="flex-1 px-2.5 py-1 text-xs bg-background border border-border/70 rounded-md text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="submit"
+                disabled={isSessionImporting || !sessionUrlInput.trim()}
+                className="px-2.5 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50 flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                {isSessionImporting ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <>
+                    <Plus size={12} />
+                    <span>Add</span>
+                  </>
+                )}
+              </button>
+            </div>
+            {sessionImportError && (
+              <p className="text-[10px] text-destructive">{sessionImportError}</p>
+            )}
+          </form>
+
+          {/* 4. Curated Wishlists / Problem Collections */}
+          <div className="space-y-2 pt-2 border-t border-border/40">
+            <div className="flex items-center justify-between text-xs text-muted-foreground px-0.5">
+              <span className="font-semibold text-foreground flex items-center gap-1.5">
+                <Sparkles size={12} className="text-amber-400" />
+                <span>Curated Wishlists</span>
+              </span>
+              <span className="text-[10px] text-muted-foreground">1-Click Pull</span>
+            </div>
+
+            <div className="space-y-1.5">
+              {CURATED_WISHLISTS.map((w) => (
+                <div
+                  key={w.title}
+                  className="p-2.5 rounded-lg border border-border/60 bg-card/40 flex items-center justify-between gap-2 hover:bg-accent/30 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <h5 className="text-xs font-medium text-foreground truncate">{w.title}</h5>
+                    <p className="text-[10px] text-muted-foreground">{w.description}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handlePullWishlist(w)}
+                    className="px-2 py-1 text-[11px] font-semibold rounded bg-muted hover:bg-primary hover:text-primary-foreground transition-colors shrink-0 cursor-pointer"
+                  >
+                    Pull
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

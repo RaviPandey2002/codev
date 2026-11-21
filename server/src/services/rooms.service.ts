@@ -31,10 +31,45 @@ interface SeedConfig {
   content: string;
 }
 
-function getTemplateSeed(template: RoomTemplate = 'typescript', sourceType: RoomSourceType = 'SCRATCHPAD'): SeedConfig {
+function getTemplateSeed(
+  template: RoomTemplate = 'typescript',
+  sourceType: RoomSourceType = 'SCRATCHPAD',
+  arenaPlatform: ArenaPlatform | null = null
+): SeedConfig {
   if (sourceType === 'COMPILER' && template === 'typescript') {
     // Default compiler room to C++ competitive programming
     template = 'cpp';
+  }
+
+  // Specialized class-based template for LeetCode rooms
+  if (sourceType === 'COMPILER' && arenaPlatform === 'LEETCODE') {
+    if (template === 'cpp') {
+      return {
+        path: 'main.cpp',
+        content: `#include <bits/stdc++.h>
+using namespace std;
+
+// CodeV LeetCode Arena
+// Write your solution class below
+
+class Solution {
+public:
+    
+};
+`,
+      };
+    }
+    if (template === 'python') {
+      return {
+        path: 'main.py',
+        content: `# CodeV LeetCode Arena
+# Write your solution class below
+
+class Solution:
+    pass
+`,
+      };
+    }
   }
 
   switch (template) {
@@ -154,9 +189,9 @@ export async function createRoom({
   arenaPlatform,
 }: CreateRoomParams): Promise<RoomDTO> {
   const roomId = generateRoomId();
-  const seed = getTemplateSeed(template, sourceType);
   const effectiveArenaPlatform: ArenaPlatform | null =
     sourceType === 'COMPILER' ? (arenaPlatform || 'CODEFORCES') : null;
+  const seed = getTemplateSeed(template, sourceType, effectiveArenaPlatform);
 
   const [newRoom] = await db.transaction(async (tx) => {
     // 1. Insert room record

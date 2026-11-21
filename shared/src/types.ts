@@ -81,3 +81,18 @@ export type ProblemData = {
   sampleOutput?: string;
   sampleCases?: TestCase[];
 };
+
+export type QueueProblemStatus = 'TODO' | 'SOLVING' | 'SOLVED' | 'SKIPPED';
+
+export interface QueueProblemItem {
+  id: string;
+  platform: ArenaPlatform;
+  urlOrId: string;
+  title: string;
+  difficulty?: string;
+  tags?: string[];
+  description?: string;
+  sampleCases: TestCaseItem[];
+  status: QueueProblemStatus;
+  timeSpentSeconds?: number;
+}

@@ -12,6 +12,7 @@ import {
   Maximize2,
   Minimize2,
   Plus,
+  Play,
   Terminal,
   X,
   XCircle,
@@ -22,7 +23,7 @@ import type { ArenaPlatform, ExecutionResult, TestCaseItem } from '@codev/shared
 // ─── Utility ────────────────────────────────────────────────────────────────
 
 /** Normalize output for diff: trim trailing whitespace per line + trailing newlines. */
-function normalizeOutput(s: string): string {
+export function normalizeOutput(s: string): string {
   return s
     .replace(/\r\n/g, '\n')
     .split('\n')
@@ -39,9 +40,9 @@ export function flattenLeetCodeInput(raw: string): string {
   return cleaned;
 }
 
-type Verdict = 'ACCEPTED' | 'WRONG_ANSWER' | null;
+export type Verdict = 'ACCEPTED' | 'WRONG_ANSWER' | null;
 
-function computeVerdict(actual: string, expected: string): Verdict {
+export function computeVerdict(actual: string, expected: string): Verdict {
   if (!expected.trim()) return null; // no expected → no judgment
   const normActual = normalizeOutput(actual);
   const normExpected = normalizeOutput(expected);
@@ -180,6 +181,7 @@ interface IoColumnProps {
   onSelectCase?: (idx: number) => void;
   onAddCase?: () => void;
   onRemoveCase?: (idx: number) => void;
+  onRunAllCases?: () => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -212,6 +214,7 @@ export function IoColumn({
   onSelectCase,
   onAddCase,
   onRemoveCase,
+  onRunAllCases,
 }: IoColumnProps) {
   const isRightEdge = colIndex === totalColumns - 1;
   const showFolded = isIoFolded && maximizedColumn !== 'io';
@@ -455,6 +458,23 @@ export function IoColumn({
               >
                 <Plus size={11} />
                 <span>Case</span>
+              </button>
+            )}
+
+            {testCases.length > 1 && onRunAllCases && (
+              <button
+                type="button"
+                onClick={onRunAllCases}
+                disabled={isRunning}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-mono font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors cursor-pointer shrink-0 ml-auto"
+                title="Run all testcases"
+              >
+                {isRunning ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : (
+                  <Play size={10} className="fill-current" />
+                )}
+                <span>Run All</span>
               </button>
             )}
           </div>

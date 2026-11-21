@@ -246,6 +246,192 @@ function runProcess(
   });
 }
 
+export function injectLeetCodeCppDriver(code: string): string {
+  // If user already defined main(), don't inject
+  if (/\bint\s+main\s*\(/.test(code)) return code;
+  if (!/class\s+Solution\b/.test(code)) return code;
+
+  // Detect method inside class Solution
+  const methodMatch = code.match(
+    /(?:public\s*:)?\s*([a-zA-Z0-9_<>,:\s*&]+?)\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{/
+  );
+
+  let driver = '';
+
+  if (methodMatch) {
+    const returnType = methodMatch[1].trim();
+    const methodName = methodMatch[2].trim();
+    const argsStr = methodMatch[3].trim();
+
+    // TwoSum pattern or (vector<int>, int) -> vector<int>
+    if (argsStr.includes('vector<int>') && argsStr.includes('int') && returnType.includes('vector<int>')) {
+      driver = `
+// ========================================================
+// [CodeV Injected LeetCode Driver]
+// ========================================================
+#include <iostream>
+#include <string>
+#include <sstream>
+#include <vector>
+
+static std::vector<int> __codev_parse_vector_int(std::string s) {
+    std::vector<int> res;
+    for (char &c : s) {
+        if (c == '[' || c == ']' || c == ',') c = ' ';
+    }
+    std::stringstream ss(s);
+    int num;
+    while (ss >> num) res.push_back(num);
+    return res;
+}
+
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string line1;
+    if (!std::getline(std::cin, line1)) return 0;
+    std::vector<int> nums = __codev_parse_vector_int(line1);
+
+    int target = 0;
+    if (!(std::cin >> target)) return 0;
+
+    Solution sol;
+    std::vector<int> ans = sol.${methodName}(nums, target);
+
+    std::cout << "[";
+    for (size_t i = 0; i < ans.size(); ++i) {
+        std::cout << ans[i] << (i + 1 < ans.size() ? "," : "");
+    }
+    std::cout << "]" << std::endl;
+    return 0;
+}
+`;
+    } else if (returnType === 'int' && argsStr.includes('vector<int>')) {
+      driver = `
+#include <iostream>
+#include <string>
+#include <sstream>
+#include <vector>
+
+static std::vector<int> __codev_parse_vector_int(std::string s) {
+    std::vector<int> res;
+    for (char &c : s) {
+        if (c == '[' || c == ']' || c == ',') c = ' ';
+    }
+    std::stringstream ss(s);
+    int num;
+    while (ss >> num) res.push_back(num);
+    return res;
+}
+
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string line1;
+    if (!std::getline(std::cin, line1)) return 0;
+    std::vector<int> nums = __codev_parse_vector_int(line1);
+
+    Solution sol;
+    int ans = sol.${methodName}(nums);
+    std::cout << ans << std::endl;
+    return 0;
+}
+`;
+    }
+  }
+
+  // Fallback to standard TwoSum driver if signature not matched
+  if (!driver) {
+    driver = `
+#include <iostream>
+#include <string>
+#include <sstream>
+#include <vector>
+
+static std::vector<int> __codev_parse_vector_int(std::string s) {
+    std::vector<int> res;
+    for (char &c : s) {
+        if (c == '[' || c == ']' || c == ',') c = ' ';
+    }
+    std::stringstream ss(s);
+    int num;
+    while (ss >> num) res.push_back(num);
+    return res;
+}
+
+int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    std::string line1;
+    if (!std::getline(std::cin, line1)) return 0;
+    std::vector<int> nums = __codev_parse_vector_int(line1);
+
+    int target = 0;
+    if (!(std::cin >> target)) return 0;
+
+    Solution sol;
+    std::vector<int> ans = sol.twoSum(nums, target);
+
+    std::cout << "[";
+    for (size_t i = 0; i < ans.size(); ++i) {
+        std::cout << ans[i] << (i + 1 < ans.size() ? "," : "");
+    }
+    std::cout << "]" << std::endl;
+    return 0;
+}
+`;
+  }
+
+  return `${code}\n${driver}`;
+}
+
+export function injectLeetCodePythonDriver(code: string): string {
+  // If user already defined __main__, don't inject
+  if (/__name__\s*==\s*['"]__main__['"]/.test(code)) return code;
+  if (!/class\s+Solution\b/.test(code)) return code;
+
+  const header = `from typing import *
+import collections
+import heapq
+import bisect
+import math
+import sys
+import json
+
+`;
+
+  const driver = `
+# ========================================================
+# [CodeV Injected LeetCode Driver]
+# ========================================================
+if __name__ == "__main__":
+    lines = [line.strip() for line in sys.stdin if line.strip()]
+    if lines:
+        sol = Solution()
+        method_names = [m for m in dir(sol) if not m.startswith('_') and callable(getattr(sol, m))]
+        if method_names:
+            func = getattr(sol, method_names[0])
+            parsed_args = []
+            for line in lines:
+                try:
+                    parsed_args.append(json.loads(line))
+                except Exception:
+                    parsed_args.append(line)
+            res = func(*parsed_args)
+            if isinstance(res, bool):
+                print("true" if res else "false")
+            elif isinstance(res, (list, dict)):
+                print(json.dumps(res, separators=(',', ':')))
+            elif res is not None:
+                print(res)
+`;
+
+  return `${header}${code}\n${driver}`;
+}
+
 const executeViaLocal = async (params: ExecutionParams): Promise<ExecutionResult> => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codev-run-'));
 
@@ -271,7 +457,8 @@ const executeViaLocal = async (params: ExecutionParams): Promise<ExecutionResult
       const compiler = language === 'cpp' ? 'g++' : 'gcc';
       const compileArgs = getCompileArgs(language, compilerProfile, sourceFile);
 
-      await fs.writeFile(path.join(tempDir, sourceFile), code, 'utf-8');
+      const codeToWrite = language === 'cpp' ? injectLeetCodeCppDriver(code) : code;
+      await fs.writeFile(path.join(tempDir, sourceFile), codeToWrite, 'utf-8');
 
       const compileRes = await runProcess(
         compiler,
@@ -339,7 +526,8 @@ const executeViaLocal = async (params: ExecutionParams): Promise<ExecutionResult
       args = [sourceFile];
     }
 
-    await fs.writeFile(path.join(tempDir, sourceFile), code, 'utf-8');
+    const codeToWrite = language === 'python' ? injectLeetCodePythonDriver(code) : code;
+    await fs.writeFile(path.join(tempDir, sourceFile), codeToWrite, 'utf-8');
 
     const runRes = await runProcess(
       command,

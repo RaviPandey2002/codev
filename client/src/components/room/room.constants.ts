@@ -129,8 +129,29 @@ export function loadColumnOrder(): ColumnId[] {
   return ['context', 'editor', 'io'];
 }
 
+export const LEETCODE_DEFAULT_TEMPLATES: Partial<Record<ExecutionLanguage, string>> = {
+  cpp: `#include <bits/stdc++.h>
+using namespace std;
+
+// CodeV LeetCode Arena
+// Write your solution class below
+
+class Solution {
+public:
+    
+};
+`,
+  python: `# CodeV LeetCode Arena
+# Write your solution class below
+
+class Solution:
+    pass
+`,
+};
+
 export function isBuiltInBoilerplate(code: string): boolean {
   const trimmed = code.trim();
   if (!trimmed) return true;
-  return Object.values(LANGUAGE_META).some((m) => m.template.trim() === trimmed);
+  if (Object.values(LANGUAGE_META).some((m) => m.template.trim() === trimmed)) return true;
+  return Object.values(LEETCODE_DEFAULT_TEMPLATES).some((t) => t?.trim() === trimmed);
 }

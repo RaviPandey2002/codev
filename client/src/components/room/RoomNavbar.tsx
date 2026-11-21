@@ -2,6 +2,8 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Code2,
   Copy,
   LayoutGrid,
@@ -13,7 +15,7 @@ import { Link } from 'react-router';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import type { ColumnId } from '@/components/room/room.constants';
 import { Button } from '@/components/ui/button';
-import type { RoomDTO } from '@codev/shared';
+import type { QueueProblemItem, RoomDTO } from '@codev/shared';
 
 interface RoomNavbarProps {
   room: RoomDTO;
@@ -33,6 +35,9 @@ interface RoomNavbarProps {
   onResetLayout: () => void;
   isSynced: boolean;
   peerCount: number;
+  queue?: QueueProblemItem[];
+  activeProblemIndex?: number;
+  onSelectProblem?: (index: number) => void;
 }
 
 export function RoomNavbar({
@@ -53,6 +58,9 @@ export function RoomNavbar({
   onResetLayout,
   isSynced,
   peerCount,
+  queue,
+  activeProblemIndex = 0,
+  onSelectProblem,
 }: RoomNavbarProps) {
   const applyPreset = (
     order: ColumnId[],
@@ -102,6 +110,44 @@ export function RoomNavbar({
             {copiedId ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
           </button>
         </div>
+
+        {queue && queue.length > 0 && onSelectProblem && (
+          <div className="hidden md:flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/40 border border-border/50 text-xs font-mono shrink-0">
+            <button
+              type="button"
+              disabled={activeProblemIndex <= 0}
+              onClick={() => onSelectProblem(activeProblemIndex - 1)}
+              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+              title="Previous problem in session"
+            >
+              <ChevronLeft size={13} />
+            </button>
+            <span className="text-[11px] font-semibold text-foreground whitespace-nowrap">
+              {activeProblemIndex + 1}/{queue.length}
+            </span>
+            <button
+              type="button"
+              disabled={activeProblemIndex >= queue.length - 1}
+              onClick={() => onSelectProblem(activeProblemIndex + 1)}
+              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+              title="Next problem in session"
+            >
+              <ChevronRight size={13} />
+            </button>
+            <div className="h-3 w-[1px] bg-border/60 mx-0.5" />
+            <span
+              className="text-foreground text-[11px] font-medium truncate max-w-[120px] lg:max-w-[180px]"
+              title={queue[activeProblemIndex]?.title}
+            >
+              {queue[activeProblemIndex]?.title}
+            </span>
+            {queue[activeProblemIndex]?.difficulty && (
+              <span className="px-1 py-0.2 rounded text-[9px] bg-muted/70 text-muted-foreground">
+                {queue[activeProblemIndex]?.difficulty}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Center: Primary Run Button */}

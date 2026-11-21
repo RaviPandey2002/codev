@@ -2,21 +2,32 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type * as Y from 'yjs';
 import { executeCodeApi } from '@/api/execution';
 import type { CollaborativeEditorHandle } from '@/components/editor/CollaborativeEditor';
+import { computeVerdict } from '@/components/room/IoColumn';
 import {
   CUSTOM_TEMPLATES_STORAGE_KEY,
   DEFAULT_PROBLEM_NOTES,
   LANGUAGE_META,
+  LEETCODE_DEFAULT_TEMPLATES,
   isBuiltInBoilerplate,
   loadSavedTemplates,
 } from '@/components/room/room.constants';
 import { getApiErrorMessage } from '@/lib/api';
-import type { ExecutionLanguage, ExecutionResult, ProblemData, TestCaseItem } from '@codev/shared';
+import type {
+  ArenaPlatform,
+  ExecutionLanguage,
+  ExecutionResult,
+  ProblemData,
+  QueueProblemItem,
+  QueueProblemStatus,
+  TestCaseItem,
+} from '@codev/shared';
 
 interface UseRoomWorkspaceParams {
   username?: string;
   isEffectiveReadOnly: boolean;
   isIoFolded: boolean;
   toggleIoFold: (force?: boolean) => void;
+  arenaPlatform?: ArenaPlatform | null;
 }
 
 export function useRoomWorkspace({
@@ -24,6 +35,7 @@ export function useRoomWorkspace({
   isEffectiveReadOnly,
   isIoFolded,
   toggleIoFold,
+  arenaPlatform,
 }: UseRoomWorkspaceParams) {
   const ydocRef = useRef<Y.Doc | null>(null);
   const editorHandleRef = useRef<CollaborativeEditorHandle | null>(null);
@@ -49,6 +61,14 @@ export function useRoomWorkspace({
 
   // Per-case execution results map (case index -> ExecutionResult)
   const [caseResults, setCaseResults] = useState<Record<number, ExecutionResult>>({});
+
+  // Problem Queue & Session state
+  const [problemQueue, setProblemQueue] = useState<QueueProblemItem[]>([]);
+  const problemQueueRef = useRef(problemQueue);
+  problemQueueRef.current = problemQueue;
+  const [activeProblemIndex, setActiveProblemIndex] = useState(0);
+  const activeProblemIndexRef = useRef(activeProblemIndex);
+  activeProblemIndexRef.current = activeProblemIndex;
 
   const [problemNotes, setProblemNotes] = useState(DEFAULT_PROBLEM_NOTES);
   const [problemData, setProblemData] = useState<ProblemData | null>(null);
@@ -99,9 +119,16 @@ export function useRoomWorkspace({
       if (typeof custom === 'string' && custom.trim().length > 0) {
         return custom;
       }
+      const isLeetCode =
+        problemData?.platform === 'LEETCODE' ||
+        arenaPlatform === 'LEETCODE' ||
+        problemQueueRef.current[activeProblemIndexRef.current]?.platform === 'LEETCODE';
+      if (isLeetCode && LEETCODE_DEFAULT_TEMPLATES[lang]) {
+        return LEETCODE_DEFAULT_TEMPLATES[lang]!;
+      }
       return LANGUAGE_META[lang].template;
     },
-    [customTemplates]
+    [customTemplates, problemData, arenaPlatform]
   );
 
   const handleDocReady = useCallback((doc: Y.Doc, handle: CollaborativeEditorHandle) => {
@@ -145,6 +172,21 @@ export function useRoomWorkspace({
       const syncedProblem = meta.get('problemData') as ProblemData | null | undefined;
       if (syncedProblem !== undefined) {
         setProblemData(syncedProblem);
+      }
+
+      const syncedQueue = meta.get('problemQueue') as QueueProblemItem[] | undefined;
+      if (Array.isArray(syncedQueue)) {
+        setProblemQueue(syncedQueue);
+        problemQueueRef.current = syncedQueue;
+      }
+
+      const syncedProbIdx = meta.get('activeProblemIndex') as number | undefined;
+      if (typeof syncedProbIdx === 'number') {
+        setActiveProblemIndex(syncedProbIdx);
+        activeProblemIndexRef.current = syncedProbIdx;
+        if (syncedQueue && syncedQueue[syncedProbIdx]) {
+          setProblemData(syncedQueue[syncedProbIdx] as any);
+        }
       }
 
       const syncedRunning = Boolean(meta.get('isRunning'));
@@ -450,6 +492,164 @@ export function useRoomWorkspace({
     ydocRef.current?.getMap('workspaceMeta').set('problemData', data);
   }, []);
 
+  const handleSelectQueueProblem = useCallback(
+    (targetIndex: number) => {
+      const queue = problemQueueRef.current;
+      if (targetIndex < 0 || targetIndex >= queue.length) return;
+
+      const currentIdx = activeProblemIndexRef.current;
+      const currentProb = queue[currentIdx];
+      const targetProb = queue[targetIndex];
+      const doc = ydocRef.current;
+
+      if (!doc || !targetProb) return;
+
+      const codeByProblem = doc.getMap<string>('codeByProblem');
+      const testCasesByProblem = doc.getMap<string>('testCasesByProblem');
+
+      // 1. Save current problem code & testcases
+      if (currentProb) {
+        const currentCode = editorHandleRef.current?.getCode() || doc.getText('monaco').toString();
+        if (currentCode.trim().length > 0) {
+          codeByProblem.set(currentProb.id, currentCode);
+        }
+        testCasesByProblem.set(currentProb.id, JSON.stringify(testCasesRef.current));
+      }
+
+      // 2. Retrieve or initialize target problem code
+      const savedCode = codeByProblem.get(targetProb.id);
+      let nextCode = savedCode;
+      if (!nextCode || nextCode.trim().length === 0) {
+        if (targetProb.platform === 'LEETCODE' && language === 'cpp') {
+          nextCode = `class Solution {\npublic:\n    \n};\n`;
+        } else {
+          nextCode = getEffectiveTemplate(language);
+        }
+      }
+
+      const sharedText = doc.getText('monaco');
+      doc.transact(() => {
+        sharedText.delete(0, sharedText.length);
+        sharedText.insert(0, nextCode);
+      });
+
+      // 3. Retrieve or initialize target problem testcases
+      const savedCasesRaw = testCasesByProblem.get(targetProb.id);
+      let nextCases: TestCaseItem[] = [];
+      if (savedCasesRaw) {
+        try {
+          nextCases = JSON.parse(savedCasesRaw);
+        } catch { }
+      }
+      if (nextCases.length === 0 && targetProb.sampleCases && targetProb.sampleCases.length > 0) {
+        nextCases = targetProb.sampleCases.map((c, i) => ({
+          id: c.id || String(i + 1),
+          name: c.name || `Case ${i + 1}`,
+          input: c.input,
+          output: c.output || '',
+        }));
+      }
+      if (nextCases.length === 0) {
+        nextCases = [{ id: '1', name: 'Case 1', input: '', output: '' }];
+      }
+
+      setTestCases(nextCases);
+      testCasesRef.current = nextCases;
+      setActiveCaseIndex(0);
+      activeCaseIndexRef.current = 0;
+      setStdin(nextCases[0].input);
+      setExpectedOutput(nextCases[0].output);
+      stdinRef.current = nextCases[0].input;
+      expectedOutputRef.current = nextCases[0].output;
+      setCaseResults({});
+
+      setActiveProblemIndex(targetIndex);
+      activeProblemIndexRef.current = targetIndex;
+      setProblemData(targetProb as any);
+
+      doc.transact(() => {
+        const meta = doc.getMap<any>('workspaceMeta');
+        meta.set('activeProblemIndex', targetIndex);
+        meta.set('problemData', targetProb);
+        meta.set('testCases', nextCases);
+        meta.set('stdin', nextCases[0].input);
+        meta.set('expectedOutput', nextCases[0].output);
+        meta.delete('executionResult');
+      });
+    },
+    [language, getEffectiveTemplate]
+  );
+
+  const handleAddToQueue = useCallback(
+    (newProblem: ProblemData) => {
+      const existingQueue = problemQueueRef.current;
+      const targetUrlOrId = newProblem.url || newProblem.title;
+
+      // Deduplication check: if problem already exists by url or title
+      const existingIndex = existingQueue.findIndex(
+        (item) =>
+          (item.urlOrId && targetUrlOrId && item.urlOrId.toLowerCase() === targetUrlOrId.toLowerCase()) ||
+          (item.title && newProblem.title && item.title.toLowerCase() === newProblem.title.toLowerCase())
+      );
+
+      if (existingIndex !== -1) {
+        handleSelectQueueProblem(existingIndex);
+        return;
+      }
+
+      const id = newProblem.url || `${newProblem.platform.toLowerCase()}_${Date.now()}`;
+      const item: QueueProblemItem = {
+        id,
+        platform: newProblem.platform,
+        urlOrId: targetUrlOrId,
+        title: newProblem.title,
+        difficulty: newProblem.difficulty,
+        tags: newProblem.tags,
+        description: newProblem.description,
+        sampleCases: (newProblem.sampleCases || []).map((c, i) => ({
+          id: String(i + 1),
+          name: `Case ${i + 1}`,
+          input: c.input,
+          output: c.output || '',
+        })),
+        status: 'TODO',
+      };
+
+      const updated = [...existingQueue, item];
+      setProblemQueue(updated);
+      problemQueueRef.current = updated;
+      ydocRef.current?.getMap('workspaceMeta').set('problemQueue', updated);
+
+      if (updated.length === 1) {
+        handleSelectQueueProblem(0);
+      }
+    },
+    [handleSelectQueueProblem]
+  );
+
+  const handleRemoveFromQueue = useCallback((id: string) => {
+    const updated = problemQueueRef.current.filter((p) => p.id !== id);
+    setProblemQueue(updated);
+    problemQueueRef.current = updated;
+    ydocRef.current?.getMap('workspaceMeta').set('problemQueue', updated);
+
+    if (activeProblemIndexRef.current >= updated.length) {
+      const newIdx = Math.max(0, updated.length - 1);
+      setActiveProblemIndex(newIdx);
+      activeProblemIndexRef.current = newIdx;
+      ydocRef.current?.getMap('workspaceMeta').set('activeProblemIndex', newIdx);
+    }
+  }, []);
+
+  const handleUpdateProblemStatus = useCallback((id: string, status: QueueProblemStatus) => {
+    const updated = problemQueueRef.current.map((p) =>
+      p.id === id ? { ...p, status } : p
+    );
+    setProblemQueue(updated);
+    problemQueueRef.current = updated;
+    ydocRef.current?.getMap('workspaceMeta').set('problemQueue', updated);
+  }, []);
+
   const handleClearOutput = useCallback(() => {
     const curIdx = activeCaseIndexRef.current;
     setCaseResults((prev) => {
@@ -521,6 +721,17 @@ export function useRoomWorkspace({
         [curCaseIdx]: resultWithCase,
       }));
 
+      // If single case and expected output matches, mark problem as SOLVED in queue
+      if (testCasesRef.current.length === 1 && expectedOutputRef.current.trim().length > 0) {
+        if (computeVerdict(result.stdout, expectedOutputRef.current) === 'ACCEPTED') {
+          const queue = problemQueueRef.current;
+          const curProb = queue[activeProblemIndexRef.current];
+          if (curProb && curProb.status !== 'SOLVED') {
+            handleUpdateProblemStatus(curProb.id, 'SOLVED');
+          }
+        }
+      }
+
       doc.transact(() => {
         meta.set('isRunning', false);
         meta.set('runningBy', null);
@@ -560,7 +771,105 @@ export function useRoomWorkspace({
       setIsRunning(false);
       setRunningBy(null);
     }
-  }, [isRunning, language, username, isIoFolded, toggleIoFold]);
+  }, [isRunning, language, username, isIoFolded, toggleIoFold, handleUpdateProblemStatus]);
+
+  const handleRunAllCases = useCallback(async () => {
+    const doc = ydocRef.current;
+    if (!doc || isRunning) return;
+
+    const rawCode = editorHandleRef.current?.getCode() || doc.getText('monaco').toString();
+    if (!rawCode.trim()) return;
+    const code = rawCode.replace(/\r\n/g, '\n');
+
+    const cases = testCasesRef.current;
+    if (!cases || cases.length === 0) return;
+
+    const meta = doc.getMap<any>('workspaceMeta');
+    const currentLang = (meta.get('language') as ExecutionLanguage) || language;
+
+    if (isIoFolded) {
+      toggleIoFold(false);
+    }
+
+    const now = Date.now();
+    doc.transact(() => {
+      meta.set('isRunning', true);
+      meta.set('runningBy', username || 'Peer');
+      meta.set('runStartedAt', now);
+    });
+    setIsRunning(true);
+    setRunningBy(username || 'Peer');
+
+    try {
+      const results: Record<number, ExecutionResult> = {};
+      let allPassed = true;
+
+      for (let i = 0; i < cases.length; i++) {
+        const tc = cases[i];
+        const currentStdin = (tc.input || '').replace(/\r\n/g, '\n');
+        const res = await executeCodeApi({
+          language: currentLang,
+          compilerProfile: 'default',
+          code,
+          stdin: currentStdin,
+        });
+
+        const resWithCase = {
+          ...res,
+          caseIndex: i,
+        };
+        results[i] = resWithCase;
+
+        if (tc.output && tc.output.trim().length > 0) {
+          const verdict = computeVerdict(res.stdout, tc.output);
+          if (verdict !== 'ACCEPTED') {
+            allPassed = false;
+          }
+        } else if (res.status !== 'SUCCESS') {
+          allPassed = false;
+        }
+      }
+
+      setCaseResults(results);
+      const curIdx = activeCaseIndexRef.current;
+      if (results[curIdx]) {
+        setExecutionResult(results[curIdx]);
+        doc.transact(() => {
+          meta.set('executionResult', results[curIdx]);
+        });
+      }
+
+      // If all testcases passed, auto-mark problem as SOLVED in the playlist!
+      if (allPassed && cases.length > 0) {
+        const queue = problemQueueRef.current;
+        const curProb = queue[activeProblemIndexRef.current];
+        if (curProb && curProb.status !== 'SOLVED') {
+          handleUpdateProblemStatus(curProb.id, 'SOLVED');
+        }
+      }
+    } catch (err) {
+      const curCaseIdx = activeCaseIndexRef.current;
+      const fallbackError: ExecutionResult & { caseIndex?: number } = {
+        stdout: '',
+        stderr: getApiErrorMessage(err, 'Run all testcases failed.'),
+        exitCode: 1,
+        executionTimeMs: 0,
+        status: 'RUNTIME_ERROR',
+        triggeredBy: username || 'Peer',
+        timestamp: new Date().toISOString(),
+        caseIndex: curCaseIdx,
+      };
+      setExecutionResult(fallbackError);
+    } finally {
+      setIsRunning(false);
+      setRunningBy(null);
+      doc.transact(() => {
+        meta.set('isRunning', false);
+        meta.set('runningBy', null);
+        meta.delete('runStartedAt');
+      });
+    }
+  }, [isRunning, language, username, isIoFolded, toggleIoFold, handleUpdateProblemStatus]);
 
   return {
     language,
@@ -572,6 +881,12 @@ export function useRoomWorkspace({
     caseResults,
     problemNotes,
     problemData,
+    problemQueue,
+    activeProblemIndex,
+    handleSelectQueueProblem,
+    handleAddToQueue,
+    handleRemoveFromQueue,
+    handleUpdateProblemStatus,
     isRunning,
     runningBy,
     executionResult,
@@ -595,5 +910,6 @@ export function useRoomWorkspace({
     handleClearOutput,
     handleFormatCode,
     handleRunCode,
+    handleRunAllCases,
   };
 }

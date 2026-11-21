@@ -68,6 +68,12 @@ export default function RoomPage() {
     caseResults,
     problemNotes,
     problemData,
+    problemQueue,
+    activeProblemIndex,
+    handleSelectQueueProblem,
+    handleAddToQueue,
+    handleRemoveFromQueue,
+    handleUpdateProblemStatus,
     isRunning,
     runningBy,
     executionResult,
@@ -91,11 +97,13 @@ export default function RoomPage() {
     handleClearOutput,
     handleFormatCode,
     handleRunCode,
+    handleRunAllCases,
   } = useRoomWorkspace({
     username: user?.username,
     isEffectiveReadOnly,
     isIoFolded,
     toggleIoFold,
+    arenaPlatform: room?.sourceType === 'COMPILER' ? (room?.arenaPlatform || 'CODEFORCES') : null,
   });
 
   useEffect(() => {
@@ -249,6 +257,9 @@ export default function RoomPage() {
         onResetLayout={handleResetLayout}
         isSynced={isSynced}
         peerCount={peerCount}
+        queue={problemQueue}
+        activeProblemIndex={activeProblemIndex}
+        onSelectProblem={handleSelectQueueProblem}
       />
 
       {room && (
@@ -283,9 +294,18 @@ export default function RoomPage() {
             onProblemNotesChange={handleProblemNotesChange}
             arenaPlatform={room.sourceType === 'COMPILER' ? (room.arenaPlatform || 'CODEFORCES') : null}
             problemData={problemData}
-            onProblemDataChange={handleProblemDataChange}
+            onProblemDataChange={(data) => {
+              handleProblemDataChange(data);
+              if (data) handleAddToQueue(data);
+            }}
             onLoadSampleCase={handleLoadSampleCase}
             onLoadAllCases={handleLoadAllCases}
+            queue={problemQueue}
+            activeProblemIndex={activeProblemIndex}
+            onSelectProblem={handleSelectQueueProblem}
+            onAddProblem={handleAddToQueue}
+            onRemoveProblem={handleRemoveFromQueue}
+            onUpdateStatus={handleUpdateProblemStatus}
           />
 
           <EditorColumn
@@ -343,6 +363,7 @@ export default function RoomPage() {
             onSelectCase={handleSelectCase}
             onAddCase={handleAddCase}
             onRemoveCase={handleRemoveCase}
+            onRunAllCases={handleRunAllCases}
           />
 
           {renderGutterBetween(0)}
