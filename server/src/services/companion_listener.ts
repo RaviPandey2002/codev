@@ -1,5 +1,5 @@
 import http from 'node:http';
-import type { ProblemData, TestCase } from '@codev/shared';
+import type { ArenaPlatform, CodeSnippet, ProblemData, TestCase } from '@codev/shared';
 
 export interface CompanionTest {
   input: string;
@@ -11,10 +11,17 @@ export interface CompanionPayload {
   group?: string;
   url?: string;
   interactive?: boolean;
-  memoryLimit?: number;
-  timeLimit?: number;
+  memoryLimit?: number | string;
+  timeLimit?: number | string;
   tests?: CompanionTest[];
   testType?: string;
+  description?: string;
+  difficulty?: string;
+  tags?: string[];
+  codeSnippets?: CodeSnippet[];
+  inputSpecification?: string;
+  outputSpecification?: string;
+  platform?: ArenaPlatform;
 }
 
 let latestProblem: { problem: ProblemData; timestamp: number } | null = null;
@@ -40,17 +47,43 @@ export function mapCompanionPayloadToProblem(body: CompanionPayload): ProblemDat
   }));
 
   const isLeetCode = (body.url || '').includes('leetcode.com');
+  const platform: ArenaPlatform = body.platform || (isLeetCode ? 'LEETCODE' : 'CODEFORCES');
+
+  let timeLimit: string | undefined;
+  if (typeof body.timeLimit === 'number') {
+    timeLimit = `${body.timeLimit / 1000} seconds`;
+  } else if (typeof body.timeLimit === 'string') {
+    timeLimit = body.timeLimit;
+  }
+
+  let memoryLimit: string | undefined;
+  if (typeof body.memoryLimit === 'number') {
+    memoryLimit = `${body.memoryLimit} megabytes`;
+  } else if (typeof body.memoryLimit === 'string') {
+    memoryLimit = body.memoryLimit;
+  }
+
+  // Use rich description from extension if present; fallback to summary if Competitive Companion
+  const description =
+    body.description && body.description.trim().length > 0
+      ? body.description
+      : `Imported via Competitive Companion from ${body.group || body.url || 'Web'}.`;
 
   return {
     title: body.name || 'Imported Problem',
-    platform: isLeetCode ? 'LEETCODE' : 'CODEFORCES',
+    platform,
     url: body.url || undefined,
-    timeLimit: body.timeLimit ? `${body.timeLimit / 1000} seconds` : undefined,
-    memoryLimit: body.memoryLimit ? `${body.memoryLimit} megabytes` : undefined,
-    description: `Imported via Competitive Companion from ${body.group || body.url || 'Web'}.`,
+    timeLimit,
+    memoryLimit,
+    description,
     sampleCases,
     sampleInput: sampleCases[0]?.input || '',
     sampleOutput: sampleCases[0]?.output || '',
+    difficulty: body.difficulty,
+    tags: Array.isArray(body.tags) ? body.tags : undefined,
+    codeSnippets: Array.isArray(body.codeSnippets) ? body.codeSnippets : undefined,
+    inputSpecification: body.inputSpecification,
+    outputSpecification: body.outputSpecification,
   };
 }
 

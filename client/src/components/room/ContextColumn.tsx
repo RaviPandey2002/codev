@@ -1,40 +1,37 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
 import {
-  Bookmark,
   BookOpen,
   Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Circle,
-  ClipboardPaste,
   Clock,
   Code2,
-  Copy,
   Cpu,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileText,
-  Layers,
   ListOrdered,
   Loader2,
   Maximize2,
   Minimize2,
+  Minus,
   Pause,
   Play,
   Plus,
   RotateCcw,
+  SlidersHorizontal,
   Sparkles,
   Tag,
   Trash2,
-  X,
 } from 'lucide-react';
 import { importProblemApi } from '@/api/problems';
 import { type ColumnId, DEFAULT_PROBLEM_NOTES } from '@/components/room/room.constants';
 import { CURATED_WISHLISTS, type CuratedWishlist } from '@/components/room/wishlists.constants';
 import { getApiErrorMessage } from '@/lib/api';
-import { generateBookmarkletScript, SAMPLE_SIMULATED_CF_PROBLEM } from '@/lib/problemImporter';
-import { parseProblemFromClipboard } from '@/lib/smartClipboardParser';
 import type { ArenaPlatform, ProblemData, QueueProblemItem, QueueProblemStatus } from '@codev/shared';
 
 // ─── Utility ────────────────────────────────────────────────────────────────
@@ -42,6 +39,8 @@ import type { ArenaPlatform, ProblemData, QueueProblemItem, QueueProblemStatus }
 export function cleanProblemHtml(html: string): string {
   if (!html) return '';
   return html
+    // Strip MathJax preview & assistive hidden elements that duplicate formulas (e.g. nn, 11)
+    .replace(/<span[^>]*class="[^"]*(?:MathJax_Preview|MJX_Assistive_MathML|MathJax_Assistive_MathML)[^"]*"[^>]*>[\s\S]*?<\/span>/gi, '')
     // Remove empty spacer paragraphs like <p>&nbsp;</p>, <p><br></p>, etc.
     .replace(/<p>\s*(?:&nbsp;|\s|<br\s*\/?>)*\s*<\/p>/gi, '')
     // Replace non-breaking spaces with standard space
@@ -52,20 +51,6 @@ export function cleanProblemHtml(html: string): string {
     .replace(/<font[^>]*>/gi, '')
     .replace(/<\/font>/gi, '')
     .trim();
-}
-
-export function parseCodeforcesExample(text: string): { input: string; output: string } | null {
-  const inputIdx = text.search(/\binput\b/i);
-  const outputIdx = text.search(/\boutput\b/i);
-  if (inputIdx !== -1 && outputIdx !== -1 && outputIdx > inputIdx) {
-    let rawInput = text.substring(inputIdx + 5, outputIdx).trim();
-    let rawOutput = text.substring(outputIdx + 6).trim();
-    // Strip "Copy" button artifacts copied from Codeforces webpage headers
-    rawInput = rawInput.replace(/^Copy\s*/i, '').trim();
-    rawOutput = rawOutput.replace(/^Copy\s*/i, '').trim();
-    return { input: rawInput, output: rawOutput };
-  }
-  return null;
 }
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -119,7 +104,7 @@ export function ContextColumn({
   onAddProblem,
   onRemoveProblem,
   onUpdateStatus,
-  roomId,
+  roomId: _roomId,
 }: ContextColumnProps) {
   const isLeftEdge = colIndex === 0;
   const showFolded = isContextFolded && maximizedColumn !== 'context';
@@ -134,79 +119,6 @@ export function ContextColumn({
   const [sessionUrlInput, setSessionUrlInput] = useState('');
   const [isSessionImporting, setIsSessionImporting] = useState(false);
   const [sessionImportError, setSessionImportError] = useState<string | null>(null);
-
-  // Smart Clipboard state
-  const [isClipboardPasting, setIsClipboardPasting] = useState(false);
-  const [clipboardFeedback, setClipboardFeedback] = useState<{ message: string; isError: boolean } | null>(null);
-  const [isManualPasteModalOpen, setIsManualPasteModalOpen] = useState(false);
-  const [manualProblemText, setManualProblemText] = useState('');
-
-  const handleSmartClipboardImport = async () => {
-    try {
-      setIsClipboardPasting(true);
-      setClipboardFeedback(null);
-      let text = '';
-      if (navigator?.clipboard?.readText) {
-        text = await navigator.clipboard.readText();
-      }
-      if (!text || text.trim().length === 0) {
-        setIsManualPasteModalOpen(true);
-        setIsClipboardPasting(false);
-        return;
-      }
-      const res = parseProblemFromClipboard(text);
-      if (res.success && res.problem) {
-        onAddProblem?.(res.problem, true);
-        setClipboardFeedback({
-          message: `✓ Added "${res.problem.title}" (${res.problem.sampleCases?.length || 0} cases)`,
-          isError: false,
-        });
-        setTimeout(() => setClipboardFeedback(null), 3500);
-      } else {
-        setClipboardFeedback({
-          message: res.error || 'Could not parse problem from clipboard.',
-          isError: true,
-        });
-        setIsManualPasteModalOpen(true);
-      }
-    } catch {
-      setIsManualPasteModalOpen(true);
-    } finally {
-      setIsClipboardPasting(false);
-    }
-  };
-
-  const handleApplyManualProblemPaste = () => {
-    if (!manualProblemText.trim()) return;
-    const res = parseProblemFromClipboard(manualProblemText);
-    if (res.success && res.problem) {
-      onAddProblem?.(res.problem, true);
-      setClipboardFeedback({
-        message: `✓ Added "${res.problem.title}" (${res.problem.sampleCases?.length || 0} cases)`,
-        isError: false,
-      });
-      setTimeout(() => setClipboardFeedback(null), 3500);
-      setIsManualPasteModalOpen(false);
-      setManualProblemText('');
-    } else {
-      setClipboardFeedback({
-        message: res.error || 'Could not parse problem from text.',
-        isError: true,
-      });
-    }
-  };
-
-  // Bookmarklet helper state
-  const [copiedBookmarklet, setCopiedBookmarklet] = useState(false);
-  const bookmarkAnchorRef = useRef<HTMLAnchorElement>(null);
-  const bookmarkletScript = generateBookmarkletScript(roomId);
-
-  // Directly setAttribute on DOM element to bypass React 19 JSX javascript: URL sanitizer
-  useEffect(() => {
-    if (bookmarkAnchorRef.current) {
-      bookmarkAnchorRef.current.setAttribute('href', bookmarkletScript);
-    }
-  }, [bookmarkletScript]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -271,11 +183,6 @@ export function ContextColumn({
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
-  // Paste Sample Modal state
-  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
-  const [pasteInputText, setPasteInputText] = useState('');
-  const [pasteOutputText, setPasteOutputText] = useState('');
-
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = urlInput.trim();
@@ -303,18 +210,82 @@ export function ContextColumn({
     }
   };
 
-  const handleSmartPasteApply = () => {
-    // If user pasted both into input box, check if it can be split
-    const combined = parseCodeforcesExample(pasteInputText);
-    const finalIn = combined ? combined.input : pasteInputText;
-    const finalOut = combined ? combined.output : pasteOutputText;
-
-    if (onLoadSampleCase) {
-      onLoadSampleCase(finalIn, finalOut);
+  // Tags visibility (spoiler protection): default to hidden unless user opted in
+  const [showTags, setShowTags] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('codev_show_tags') === 'true';
+    } catch {
+      return false;
     }
-    setIsPasteModalOpen(false);
-    setPasteInputText('');
-    setPasteOutputText('');
+  });
+
+  const toggleShowTags = () => {
+    setShowTags((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('codev_show_tags', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Reader Settings Toolbox Popover state
+  const [isReaderSettingsOpen, setIsReaderSettingsOpen] = useState(false);
+  const readerSettingsRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isReaderSettingsOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (readerSettingsRef.current && !readerSettingsRef.current.contains(e.target as Node)) {
+        setIsReaderSettingsOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsReaderSettingsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isReaderSettingsOpen]);
+
+  // Statement Reader Font Size (12px to 20px, default 15px)
+  const [statementFontSize, setStatementFontSize] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('codev_statement_font_size');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= 12 && parsed <= 20) return parsed;
+      }
+    } catch {}
+    return 15;
+  });
+
+  const updateFontSize = (newSize: number) => {
+    const clamped = Math.max(12, Math.min(20, newSize));
+    setStatementFontSize(clamped);
+    try {
+      localStorage.setItem('codev_statement_font_size', String(clamped));
+    } catch {}
+  };
+
+  // Micro-interaction feedback for testcase loads
+  const [caseFeedback, setCaseFeedback] = useState<string | null>(null);
+
+  const handleLoadAllCasesWithFeedback = (cases: Array<{ input: string; output?: string }>) => {
+    if (!onLoadAllCases) return;
+    onLoadAllCases(cases);
+    setCaseFeedback('ALL');
+    setTimeout(() => setCaseFeedback(null), 1500);
+  };
+
+  const handleLoadSingleCaseWithFeedback = (caseId: string, input: string, output: string) => {
+    if (!onLoadSampleCase) return;
+    onLoadSampleCase(input, output);
+    setCaseFeedback(caseId);
+    setTimeout(() => setCaseFeedback(null), 1500);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -524,27 +495,6 @@ export function ContextColumn({
             )}
           </form>
 
-          {/* Action Row: Smart Paste Sample & Clear */}
-          <div className="flex items-center justify-between pt-0.5">
-            <button
-              type="button"
-              onClick={() => setIsPasteModalOpen(true)}
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-500 hover:text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 rounded cursor-pointer transition-colors"
-            >
-              <Layers size={11} />
-              <span>Paste Sample Case</span>
-            </button>
-
-            {problemData && (
-              <button
-                type="button"
-                onClick={() => onProblemDataChange?.(null)}
-                className="text-[11px] font-mono text-muted-foreground hover:text-destructive cursor-pointer"
-              >
-                Clear Problem
-              </button>
-            )}
-          </div>
 
           {/* ── Problem Display ─────────────────────────────────────────── */}
           {problemData ? (
@@ -580,37 +530,46 @@ export function ContextColumn({
                 </div>
               </div>
 
-              {/* Resource Limits (Time & Memory) */}
-              <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                <div className="p-2 rounded-lg bg-card/60 border border-border/60 flex items-center gap-2">
-                  <Clock size={14} className="text-amber-500 shrink-0" />
-                  <div>
-                    <div className="text-[10px] text-muted-foreground">Time Limit</div>
-                    <div className="font-semibold text-foreground">
-                      {problemData.timeLimit || '2.0 seconds'}
-                    </div>
-                  </div>
+              {/* Consolidated Metadata Chip Row with Tag Spoiler Protection */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono pt-0.5">
+                {/* Time Limit */}
+                <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-card/60 border border-border/60 text-foreground">
+                  <Clock size={11} className="text-amber-500 shrink-0" />
+                  <span className="text-[11px] font-medium">{problemData.timeLimit || '2.0s'}</span>
                 </div>
 
-                <div className="p-2 rounded-lg bg-card/60 border border-border/60 flex items-center gap-2">
-                  <Cpu size={14} className="text-emerald-500 shrink-0" />
-                  <div>
-                    <div className="text-[10px] text-muted-foreground">Memory Limit</div>
-                    <div className="font-semibold text-foreground">
-                      {problemData.memoryLimit || '256 MB'}
-                    </div>
-                  </div>
+                {/* Memory Limit */}
+                <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-card/60 border border-border/60 text-foreground">
+                  <Cpu size={11} className="text-emerald-500 shrink-0" />
+                  <span className="text-[11px] font-medium">{problemData.memoryLimit || '256 MB'}</span>
                 </div>
+
+                {/* Tag Spoiler Eye Toggle */}
+                {problemData.tags && problemData.tags.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={toggleShowTags}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-all cursor-pointer border ${
+                      showTags
+                        ? 'bg-amber-500/15 border-amber-500/30 text-amber-400 hover:bg-amber-500/25'
+                        : 'bg-muted/60 border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted'
+                    }`}
+                    title={showTags ? 'Hide problem tags (avoid spoilers)' : 'Show problem tags'}
+                  >
+                    {showTags ? <EyeOff size={11} /> : <Eye size={11} />}
+                    <span>{showTags ? 'Hide Tags' : `Tags (${problemData.tags.length})`}</span>
+                  </button>
+                )}
               </div>
 
-              {/* Tags */}
-              {problemData.tags && problemData.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1 items-center">
-                  <Tag size={11} className="text-muted-foreground mr-0.5" />
+              {/* Tags (Revealed smoothly on demand) */}
+              {problemData.tags && problemData.tags.length > 0 && showTags && (
+                <div className="flex flex-wrap gap-1 items-center pt-0.5 animate-in fade-in-0 duration-150">
+                  <Tag size={11} className="text-muted-foreground mr-0.5 shrink-0" />
                   {problemData.tags.map((tag) => (
                     <span
                       key={tag}
-                      className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
+                      className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted/80 text-muted-foreground border border-border/40"
                     >
                       {tag}
                     </span>
@@ -618,21 +577,140 @@ export function ContextColumn({
                 </div>
               )}
 
-              {/* Problem Description */}
+              {/* Problem Description with Reader Toolbar */}
               {problemData.description && (
                 <div className="space-y-1.5 pt-1">
-                  <h4 className="text-xs font-semibold text-foreground">Statement</h4>
+                  <div className="flex items-center justify-between relative">
+                    <h4 className="text-xs font-semibold text-foreground">Statement</h4>
+
+                    {/* Reader Settings Toolbox Popover */}
+                    <div className="relative" ref={readerSettingsRef}>
+                      <button
+                        type="button"
+                        onClick={() => setIsReaderSettingsOpen((v) => !v)}
+                        className={`h-6 px-2 rounded-md flex items-center gap-1.5 text-[11px] font-medium transition-all cursor-pointer border ${
+                          isReaderSettingsOpen
+                            ? 'bg-primary/15 text-primary border-primary/30 shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-muted/60 border-border/50'
+                        }`}
+                        title="Reader preferences (font size, spoilers)"
+                      >
+                        <SlidersHorizontal size={11} className={isReaderSettingsOpen ? 'text-primary' : 'text-muted-foreground'} />
+                        <span className="text-[10px] font-mono">{statementFontSize}px</span>
+                      </button>
+
+                      {isReaderSettingsOpen && (
+                        <div className="absolute right-0 top-full mt-1.5 w-64 z-50 rounded-xl border border-border/80 bg-popover/95 backdrop-blur-md p-3 shadow-xl space-y-3 animate-in fade-in-0 zoom-in-95 duration-150">
+                          {/* Popover Header */}
+                          <div className="flex items-center justify-between pb-2 border-b border-border/50">
+                            <span className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
+                              <SlidersHorizontal size={12} className="text-primary" />
+                              Reader Settings
+                            </span>
+                            {statementFontSize !== 15 && (
+                              <button
+                                type="button"
+                                onClick={() => updateFontSize(15)}
+                                className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Reset to default font size (15px)"
+                              >
+                                <RotateCcw size={10} />
+                                <span>Reset</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Font Size Scaling */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-muted-foreground">Text Size</span>
+                              <span className="font-mono font-semibold text-foreground">{statementFontSize}px</span>
+                            </div>
+
+                            {/* Stepper + Presets */}
+                            <div className="flex items-center justify-between gap-1 bg-muted/40 p-1 rounded-lg border border-border/50">
+                              <button
+                                type="button"
+                                onClick={() => updateFontSize(statementFontSize - 1)}
+                                disabled={statementFontSize <= 12}
+                                className="h-6 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 cursor-pointer transition-colors"
+                                title="Smaller text"
+                              >
+                                <Minus size={11} />
+                              </button>
+                              <div className="flex-1 flex justify-center gap-1">
+                                {[
+                                  { label: 'S', size: 13 },
+                                  { label: 'M', size: 15 },
+                                  { label: 'L', size: 17 },
+                                  { label: 'XL', size: 19 },
+                                ].map(({ label, size }) => (
+                                  <button
+                                    key={size}
+                                    type="button"
+                                    onClick={() => updateFontSize(size)}
+                                    className={`h-6 px-1.5 rounded text-[10px] font-mono cursor-pointer transition-colors ${
+                                      statementFontSize === size
+                                        ? 'bg-primary text-primary-foreground font-bold shadow-xs'
+                                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                                    }`}
+                                    title={`${label} (${size}px)`}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => updateFontSize(statementFontSize + 1)}
+                                disabled={statementFontSize >= 20}
+                                className="h-6 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 cursor-pointer transition-colors"
+                                title="Larger text"
+                              >
+                                <Plus size={11} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Problem Tag Spoiler Toggle */}
+                          {problemData.tags && problemData.tags.length > 0 && (
+                            <div className="pt-2 border-t border-border/50 flex items-center justify-between">
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-medium text-foreground">Tags Spoiler</span>
+                                <span className="text-[9px] text-muted-foreground">Hide algorithm tags</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={toggleShowTags}
+                                className={`px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 cursor-pointer transition-colors border ${
+                                  showTags
+                                    ? 'bg-amber-500/15 border-amber-500/30 text-amber-400 hover:bg-amber-500/25'
+                                    : 'bg-muted/60 border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted'
+                                }`}
+                              >
+                                {showTags ? <Eye size={10} /> : <EyeOff size={10} />}
+                                <span>{showTags ? 'Shown' : 'Hidden'}</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <div
-                    className="text-xs text-foreground/90 leading-relaxed font-sans break-words bg-card/40 border border-border/60 p-3 rounded-xl
+                    style={{ fontSize: `${statementFontSize}px`, lineHeight: 1.65 }}
+                    className="text-foreground/90 font-sans break-words bg-card/40 border border-border/60 p-3 rounded-xl
                       [&_p]:mb-2 [&_p]:leading-relaxed
-                      [&_code]:bg-muted/80 [&_code]:text-sky-400 [&_code]:font-mono [&_code]:text-[11px] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_code]:border [&_code]:border-border/50
-                      [&_pre]:bg-muted/30 [&_pre]:border [&_pre]:border-border/60 [&_pre]:rounded-lg [&_pre]:p-2.5 [&_pre]:my-2 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:overflow-x-auto [&_pre]:custom-scrollbar
+                      [&_code]:bg-muted/80 [&_code]:text-sky-400 [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_code]:border [&_code]:border-border/50
+                      [&_pre]:bg-muted/30 [&_pre]:border [&_pre]:border-border/60 [&_pre]:rounded-lg [&_pre]:p-2.5 [&_pre]:my-2 [&_pre]:font-mono [&_pre]:text-[0.88em] [&_pre]:overflow-x-auto [&_pre]:custom-scrollbar
                       [&_strong]:text-foreground [&_strong]:font-semibold
                       [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ul]:space-y-1
                       [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_ol]:space-y-1
                       [&_li]:text-foreground/90
-                      [&_sup]:text-[9px] [&_sup]:font-mono [&_sup]:text-primary
-                      [&_sub]:text-[9px] [&_sub]:font-mono"
+                      [&_sup]:text-[0.75em] [&_sup]:font-mono [&_sup]:text-primary
+                      [&_sub]:text-[0.75em] [&_sub]:font-mono
+                      [&_.tex-span]:font-serif [&_.tex-span]:italic [&_.tex-span]:text-sky-300 [&_.tex-span]:px-0.5"
                     dangerouslySetInnerHTML={{
                       __html: DOMPurify.sanitize(cleanProblemHtml(problemData.description)),
                     }}
@@ -653,11 +731,20 @@ export function ContextColumn({
                     {onLoadAllCases && (
                       <button
                         type="button"
-                        onClick={() => onLoadAllCases(problemData.sampleCases || [])}
+                        onClick={() => handleLoadAllCasesWithFeedback(problemData.sampleCases || [])}
                         className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline cursor-pointer"
                       >
-                        <Play size={10} />
-                        <span>Load All Cases</span>
+                        {caseFeedback === 'ALL' ? (
+                          <>
+                            <Check size={11} className="text-emerald-400" />
+                            <span className="text-emerald-400">Loaded All Cases!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play size={10} />
+                            <span>Load All Cases</span>
+                          </>
+                        )}
                       </button>
                     )}
                   </div>
@@ -672,11 +759,20 @@ export function ContextColumn({
                           {onLoadSampleCase && (
                             <button
                               type="button"
-                              onClick={() => onLoadSampleCase(tc.input, tc.output || '')}
+                              onClick={() => handleLoadSingleCaseWithFeedback(String(idx), tc.input, tc.output || '')}
                               className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary hover:underline cursor-pointer"
                             >
-                              <Play size={9} />
-                              <span>Load Case {idx + 1}</span>
+                              {caseFeedback === String(idx) ? (
+                                <>
+                                  <Check size={10} className="text-emerald-400" />
+                                  <span className="text-emerald-400">Loaded</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Play size={9} />
+                                  <span>Load Case {idx + 1}</span>
+                                </>
+                              )}
                             </button>
                           )}
                         </div>
@@ -708,15 +804,25 @@ export function ContextColumn({
                       <button
                         type="button"
                         onClick={() =>
-                          onLoadSampleCase(
+                          handleLoadSingleCaseWithFeedback(
+                            'single',
                             problemData.sampleInput || '',
                             problemData.sampleOutput || ''
                           )
                         }
                         className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline cursor-pointer"
                       >
-                        <Play size={10} />
-                        <span>Load into Arena</span>
+                        {caseFeedback === 'single' ? (
+                          <>
+                            <Check size={11} className="text-emerald-400" />
+                            <span className="text-emerald-400">Loaded into Arena!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play size={10} />
+                            <span>Load into Arena</span>
+                          </>
+                        )}
                       </button>
                     )}
                   </div>
@@ -753,18 +859,10 @@ export function ContextColumn({
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-foreground">No Problem Loaded</p>
-                <p className="text-[11px] leading-relaxed max-w-[200px]">
+                <p className="text-[11px] leading-relaxed max-w-[220px]">
                   Paste a Codeforces problem ID (e.g.{' '}
-                  <span className="font-mono text-primary">2290/H</span>) or LeetCode URL above, or
-                  click{' '}
-                  <button
-                    type="button"
-                    onClick={() => setIsPasteModalOpen(true)}
-                    className="text-sky-500 underline cursor-pointer"
-                  >
-                    Paste Sample Case
-                  </button>
-                  .
+                  <span className="font-mono text-primary font-bold">2290/H</span>) or LeetCode URL above, or use the 1-click{' '}
+                  <strong className="text-foreground">CodeV Extension</strong> directly on Codeforces/LeetCode.
                 </p>
               </div>
             </div>
@@ -924,77 +1022,12 @@ export function ContextColumn({
           </div>
 
           {/* 3. Add to Session Form */}
+          {/* 3. Add to Session Form & Live Extension Status */}
           <div className="space-y-2.5 pt-1 border-t border-border/40">
-            {/* 3.1 Smart Clipboard Import (Zero-Setup / Recommended for Beginners) */}
-            <div className="p-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <ClipboardPaste size={14} className="text-emerald-400 shrink-0" />
-                  <span className="text-xs font-semibold text-foreground truncate">
-                    Smart Clipboard Import
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-bold">
-                  0 Setup
-                </span>
-              </div>
-
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                Copy problem text or example box on Codeforces/LeetCode (<kbd className="px-1 py-0.2 rounded bg-muted font-mono text-[10px]">Ctrl+C</kbd>), then click below:
-              </p>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleSmartClipboardImport}
-                  disabled={isClipboardPasting}
-                  className="flex-1 py-1.5 px-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
-                >
-                  {isClipboardPasting ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <>
-                      <ClipboardPaste size={13} />
-                      <span>Paste Problem</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsManualPasteModalOpen(true)}
-                  className="px-2.5 py-1.5 text-xs font-medium rounded-md border border-border/70 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
-                  title="Paste problem text manually into a box"
-                >
-                  Paste Box
-                </button>
-              </div>
-
-              {clipboardFeedback && (
-                <p className={`text-[10px] font-medium ${clipboardFeedback.isError ? 'text-destructive' : 'text-emerald-400'}`}>
-                  {clipboardFeedback.message}
-                </p>
-              )}
-            </div>
-
-            {/* 3.2 Competitive Companion Live Status (Port 10043) */}
-            <div className="p-2 rounded-lg border border-border/60 bg-card/40 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <span className="text-[11px] font-medium text-foreground truncate">
-                  Competitive Companion
-                </span>
-                <span className="text-[10px] font-mono text-muted-foreground">(:10043)</span>
-              </div>
-              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                Click green <strong>+</strong> on CF
-              </span>
-            </div>
-
-            {/* 3.3 Add by URL / ID form */}
+            {/* 3.1 Add by URL / ID form */}
             <form onSubmit={handleSessionImportAdd} className="space-y-1.5">
               <label className="text-[11px] font-semibold text-foreground flex items-center justify-between">
-                <span>Add by URL or ID</span>
+                <span>Add Problem by URL or ID</span>
               </label>
               <div className="flex gap-1.5">
                 <input
@@ -1025,78 +1058,19 @@ export function ContextColumn({
               )}
             </form>
 
-            {/* 3.4 Collapsible Bookmarklet Option */}
-            <details className="group border border-border/40 rounded-lg p-2 text-xs">
-              <summary className="font-medium text-muted-foreground hover:text-foreground cursor-pointer flex items-center justify-between list-none">
-                <span className="flex items-center gap-1.5 text-[11px]">
-                  <Bookmark size={12} className="text-sky-400" />
-                  <span>Alternative: Codeforces Bookmarklet</span>
+            {/* 3.2 CodeV Extension & Companion Live Status */}
+            <div className="p-2 rounded-lg border border-border/60 bg-card/40 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span className="text-[11px] font-medium text-foreground truncate">
+                  CodeV Companion & Extension
                 </span>
-                <span className="text-[10px] text-muted-foreground group-open:rotate-180 transition-transform">▼</span>
-              </summary>
-
-              <div className="pt-2 space-y-2">
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  Bypasses Cloudflare. Drag button below to bookmarks bar or copy script:
-                </p>
-
-                <div className="flex items-center gap-2">
-                  <a
-                    ref={bookmarkAnchorRef}
-                    href="#"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('text/uri-list', bookmarkletScript);
-                      e.dataTransfer.setData('text/plain', bookmarkletScript);
-                    }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      navigator.clipboard.writeText(bookmarkletScript);
-                      setCopiedBookmarklet(true);
-                      setTimeout(() => setCopiedBookmarklet(false), 2000);
-                    }}
-                    title="Drag to your browser bookmarks bar (or click to copy code)"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md bg-sky-500 text-white hover:bg-sky-400 shadow-xs cursor-grab active:cursor-grabbing transition-colors shrink-0"
-                  >
-                    <Bookmark size={12} />
-                    <span>Add to Codev</span>
-                  </a>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(bookmarkletScript);
-                      setCopiedBookmarklet(true);
-                      setTimeout(() => setCopiedBookmarklet(false), 2000);
-                    }}
-                    className="px-2 py-1 text-[11px] font-medium rounded border border-border/70 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors cursor-pointer"
-                  >
-                    {copiedBookmarklet ? (
-                      <>
-                        <Check size={11} className="text-emerald-400" />
-                        <span className="text-emerald-400 font-semibold">Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={11} />
-                        <span>Copy Script</span>
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onAddProblem?.(SAMPLE_SIMULATED_CF_PROBLEM);
-                    }}
-                    className="ml-auto text-[10px] text-muted-foreground hover:text-primary transition-colors cursor-pointer"
-                    title="Simulate importing a Codeforces problem into the queue"
-                  >
-                    Test CF
-                  </button>
-                </div>
+                <span className="text-[10px] font-mono text-muted-foreground">(:10043)</span>
               </div>
-            </details>
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                1-Click Import Ready
+              </span>
+            </div>
           </div>
 
           {/* 4. Curated Wishlists / Problem Collections */}
@@ -1158,123 +1132,6 @@ export function ContextColumn({
             placeholder="Paste problem description, examples, or shared algorithm notes here..."
             className="flex-1 w-full resize-none bg-transparent font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none leading-relaxed custom-scrollbar"
           />
-        </div>
-      )}
-
-      {/* ── SMART PASTE SAMPLE MODAL ────────────────────────────────────── */}
-      {isPasteModalOpen && (
-        <div className="absolute inset-0 z-40 bg-background/90 backdrop-blur-xs flex flex-col p-3 space-y-2.5 animate-in fade-in-0 duration-150">
-          <div className="flex items-center justify-between border-b border-border/60 pb-2">
-            <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              <Layers size={13} className="text-sky-500" />
-              <span>Paste Sample Testcases</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsPasteModalOpen(false)}
-              className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
-            >
-              <X size={14} />
-            </button>
-          </div>
-
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Copy the entire Example box from Codeforces or paste input and expected output below:
-          </p>
-
-          <div className="flex-1 min-h-0 space-y-2 flex flex-col">
-            <div className="flex-1 min-h-0 flex flex-col">
-              <label className="text-[10px] font-mono font-semibold text-muted-foreground mb-1">
-                Input (or Combined Example box)
-              </label>
-              <textarea
-                value={pasteInputText}
-                onChange={(e) => setPasteInputText(e.target.value)}
-                placeholder="Paste input (e.g. 5 \n 3 \n 1 2)..."
-                className="flex-1 p-2 rounded-lg bg-card border border-border/70 font-mono text-xs text-foreground resize-none focus:outline-none focus:border-primary"
-              />
-            </div>
-
-            <div className="flex-1 min-h-0 flex flex-col">
-              <label className="text-[10px] font-mono font-semibold text-muted-foreground mb-1">
-                Expected Output (optional if combined above)
-              </label>
-              <textarea
-                value={pasteOutputText}
-                onChange={(e) => setPasteOutputText(e.target.value)}
-                placeholder="Paste expected output..."
-                className="flex-1 p-2 rounded-lg bg-card border border-border/70 font-mono text-xs text-foreground resize-none focus:outline-none focus:border-primary"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
-            <button
-              type="button"
-              onClick={() => setIsPasteModalOpen(false)}
-              className="px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSmartPasteApply}
-              disabled={!pasteInputText.trim() && !pasteOutputText.trim()}
-              className="px-3 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 cursor-pointer shadow-xs"
-            >
-              Apply to Arena
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── MANUAL PROBLEM TEXT IMPORT MODAL ────────────────────────── */}
-      {isManualPasteModalOpen && (
-        <div className="absolute inset-0 z-40 bg-background/90 backdrop-blur-xs flex flex-col p-3 space-y-2.5 animate-in fade-in-0 duration-150">
-          <div className="flex items-center justify-between border-b border-border/60 pb-2">
-            <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              <ClipboardPaste size={14} className="text-emerald-400" />
-              <span>Smart Problem Text Paste</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsManualPasteModalOpen(false)}
-              className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
-            >
-              <X size={14} />
-            </button>
-          </div>
-
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Paste the raw problem text or example box from Codeforces, LeetCode, or AtCoder. Codev will automatically detect the title, limits, and all test cases:
-          </p>
-
-          <div className="flex-1 min-h-0 flex flex-col">
-            <textarea
-              value={manualProblemText}
-              onChange={(e) => setManualProblemText(e.target.value)}
-              placeholder="Paste problem text here (e.g. E. Arithmetic Subarray \n time limit per test 6s \n ... \n input \n 3 \n ... \n output \n ...)"
-              className="flex-1 p-2 rounded-lg bg-card border border-border/70 font-mono text-xs text-foreground resize-none focus:outline-none focus:border-primary"
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
-            <button
-              type="button"
-              onClick={() => setIsManualPasteModalOpen(false)}
-              className="px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleApplyManualProblemPaste}
-              disabled={!manualProblemText.trim()}
-              className="px-3 py-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg disabled:opacity-50 cursor-pointer shadow-xs"
-            >
-              Parse & Add to Playlist
-            </button>
-          </div>
         </div>
       )}
     </div>

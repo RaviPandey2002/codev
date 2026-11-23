@@ -27,6 +27,37 @@ static std::vector<int> __codev_parse_vector_int(std::string s) {
     return res;
 }
 
+static void __codev_print_vector_int(const std::vector<int>& vec) {
+    std::cout << "[";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        std::cout << vec[i] << (i + 1 < vec.size() ? "," : "");
+    }
+    std::cout << "]" << std::endl;
+}
+
+static std::vector<char> __codev_parse_vector_char(std::string s) {
+    std::vector<char> res;
+    bool in_quote = false;
+    for (char c : s) {
+        if (c == 34 || c == 39) {
+            in_quote = !in_quote;
+        } else if (in_quote) {
+            res.push_back(c);
+        } else if (c != ',' && c != '[' && c != ']' && !std::isspace((unsigned char)c)) {
+            res.push_back(c);
+        }
+    }
+    return res;
+}
+
+static void __codev_print_vector_char(const std::vector<char>& vec) {
+    std::cout << "[";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        std::cout << char(34) << vec[i] << char(34) << (i + 1 < vec.size() ? "," : "");
+    }
+    std::cout << "]" << std::endl;
+}
+
 static std::vector<std::vector<int>> __codev_parse_vector_vector_int(std::string s) {
     std::vector<std::vector<int>> matrix;
     size_t outer_open = s.find('[');
