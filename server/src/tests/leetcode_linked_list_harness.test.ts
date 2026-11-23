@@ -69,11 +69,11 @@ class Solution:
         return dummy.next
 `.trim();
 
-  // 3. Unsupported Signature (e.g. solveSudoku)
+  // 3. Unsupported Signature (e.g. complex custom type)
   const cppUnsupportedSignature = `
 class Solution {
 public:
-    void solveSudoku(vector<vector<char>>& board) {
+    void customComplexSignature(map<int, pair<int, string>>& complexMap) {
         // complex custom problem
     }
 };
