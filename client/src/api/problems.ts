@@ -5,3 +5,13 @@ export async function importProblemApi(data: ImportProblemInput): Promise<Proble
   const res = await api.post<{ problem: ProblemData }>('/problems/import', data);
   return res.data.problem;
 }
+
+export async function getLatestCompanionProblemApi(
+  since?: number
+): Promise<{ problem: ProblemData; timestamp: number } | null> {
+  const res = await api.get<{ latest: { problem: ProblemData; timestamp: number } | null }>(
+    '/problems/companion/latest',
+    { params: { since } }
+  );
+  return res.data.latest;
+}

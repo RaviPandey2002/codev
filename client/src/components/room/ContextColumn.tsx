@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import DOMPurify from 'dompurify';
 import {
+  Bookmark,
   BookOpen,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Circle,
+  ClipboardPaste,
   Clock,
   Code2,
+  Copy,
   Cpu,
   ExternalLink,
   FileText,
@@ -29,6 +33,8 @@ import { importProblemApi } from '@/api/problems';
 import { type ColumnId, DEFAULT_PROBLEM_NOTES } from '@/components/room/room.constants';
 import { CURATED_WISHLISTS, type CuratedWishlist } from '@/components/room/wishlists.constants';
 import { getApiErrorMessage } from '@/lib/api';
+import { generateBookmarkletScript, SAMPLE_SIMULATED_CF_PROBLEM } from '@/lib/problemImporter';
+import { parseProblemFromClipboard } from '@/lib/smartClipboardParser';
 import type { ArenaPlatform, ProblemData, QueueProblemItem, QueueProblemStatus } from '@codev/shared';
 
 // ─── Utility ────────────────────────────────────────────────────────────────
@@ -86,6 +92,7 @@ interface ContextColumnProps {
   onAddProblem?: (problem: ProblemData, autoSelect?: boolean) => void;
   onRemoveProblem?: (id: string) => void;
   onUpdateStatus?: (id: string, status: QueueProblemStatus) => void;
+  roomId?: string;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -112,6 +119,7 @@ export function ContextColumn({
   onAddProblem,
   onRemoveProblem,
   onUpdateStatus,
+  roomId,
 }: ContextColumnProps) {
   const isLeftEdge = colIndex === 0;
   const showFolded = isContextFolded && maximizedColumn !== 'context';
@@ -126,6 +134,79 @@ export function ContextColumn({
   const [sessionUrlInput, setSessionUrlInput] = useState('');
   const [isSessionImporting, setIsSessionImporting] = useState(false);
   const [sessionImportError, setSessionImportError] = useState<string | null>(null);
+
+  // Smart Clipboard state
+  const [isClipboardPasting, setIsClipboardPasting] = useState(false);
+  const [clipboardFeedback, setClipboardFeedback] = useState<{ message: string; isError: boolean } | null>(null);
+  const [isManualPasteModalOpen, setIsManualPasteModalOpen] = useState(false);
+  const [manualProblemText, setManualProblemText] = useState('');
+
+  const handleSmartClipboardImport = async () => {
+    try {
+      setIsClipboardPasting(true);
+      setClipboardFeedback(null);
+      let text = '';
+      if (navigator?.clipboard?.readText) {
+        text = await navigator.clipboard.readText();
+      }
+      if (!text || text.trim().length === 0) {
+        setIsManualPasteModalOpen(true);
+        setIsClipboardPasting(false);
+        return;
+      }
+      const res = parseProblemFromClipboard(text);
+      if (res.success && res.problem) {
+        onAddProblem?.(res.problem, true);
+        setClipboardFeedback({
+          message: `✓ Added "${res.problem.title}" (${res.problem.sampleCases?.length || 0} cases)`,
+          isError: false,
+        });
+        setTimeout(() => setClipboardFeedback(null), 3500);
+      } else {
+        setClipboardFeedback({
+          message: res.error || 'Could not parse problem from clipboard.',
+          isError: true,
+        });
+        setIsManualPasteModalOpen(true);
+      }
+    } catch {
+      setIsManualPasteModalOpen(true);
+    } finally {
+      setIsClipboardPasting(false);
+    }
+  };
+
+  const handleApplyManualProblemPaste = () => {
+    if (!manualProblemText.trim()) return;
+    const res = parseProblemFromClipboard(manualProblemText);
+    if (res.success && res.problem) {
+      onAddProblem?.(res.problem, true);
+      setClipboardFeedback({
+        message: `✓ Added "${res.problem.title}" (${res.problem.sampleCases?.length || 0} cases)`,
+        isError: false,
+      });
+      setTimeout(() => setClipboardFeedback(null), 3500);
+      setIsManualPasteModalOpen(false);
+      setManualProblemText('');
+    } else {
+      setClipboardFeedback({
+        message: res.error || 'Could not parse problem from text.',
+        isError: true,
+      });
+    }
+  };
+
+  // Bookmarklet helper state
+  const [copiedBookmarklet, setCopiedBookmarklet] = useState(false);
+  const bookmarkAnchorRef = useRef<HTMLAnchorElement>(null);
+  const bookmarkletScript = generateBookmarkletScript(roomId);
+
+  // Directly setAttribute on DOM element to bypass React 19 JSX javascript: URL sanitizer
+  useEffect(() => {
+    if (bookmarkAnchorRef.current) {
+      bookmarkAnchorRef.current.setAttribute('href', bookmarkletScript);
+    }
+  }, [bookmarkletScript]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -843,38 +924,180 @@ export function ContextColumn({
           </div>
 
           {/* 3. Add to Session Form */}
-          <form onSubmit={handleSessionImportAdd} className="space-y-1.5 pt-1 border-t border-border/40">
-            <label className="text-[11px] font-semibold text-foreground flex items-center justify-between">
-              <span>Add Problem by URL or ID</span>
-            </label>
-            <div className="flex gap-1.5">
-              <input
-                type="text"
-                placeholder="LeetCode URL or CF ID (e.g. 2290H)..."
-                value={sessionUrlInput}
-                onChange={(e) => setSessionUrlInput(e.target.value)}
-                disabled={isSessionImporting}
-                className="flex-1 px-2.5 py-1 text-xs bg-background border border-border/70 rounded-md text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-              <button
-                type="submit"
-                disabled={isSessionImporting || !sessionUrlInput.trim()}
-                className="px-2.5 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50 flex items-center gap-1 cursor-pointer shrink-0"
-              >
-                {isSessionImporting ? (
-                  <Loader2 size={12} className="animate-spin" />
-                ) : (
-                  <>
-                    <Plus size={12} />
-                    <span>Add</span>
-                  </>
-                )}
-              </button>
+          <div className="space-y-2.5 pt-1 border-t border-border/40">
+            {/* 3.1 Smart Clipboard Import (Zero-Setup / Recommended for Beginners) */}
+            <div className="p-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <ClipboardPaste size={14} className="text-emerald-400 shrink-0" />
+                  <span className="text-xs font-semibold text-foreground truncate">
+                    Smart Clipboard Import
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-bold">
+                  0 Setup
+                </span>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Copy problem text or example box on Codeforces/LeetCode (<kbd className="px-1 py-0.2 rounded bg-muted font-mono text-[10px]">Ctrl+C</kbd>), then click below:
+              </p>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleSmartClipboardImport}
+                  disabled={isClipboardPasting}
+                  className="flex-1 py-1.5 px-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {isClipboardPasting ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <>
+                      <ClipboardPaste size={13} />
+                      <span>Paste Problem</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsManualPasteModalOpen(true)}
+                  className="px-2.5 py-1.5 text-xs font-medium rounded-md border border-border/70 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+                  title="Paste problem text manually into a box"
+                >
+                  Paste Box
+                </button>
+              </div>
+
+              {clipboardFeedback && (
+                <p className={`text-[10px] font-medium ${clipboardFeedback.isError ? 'text-destructive' : 'text-emerald-400'}`}>
+                  {clipboardFeedback.message}
+                </p>
+              )}
             </div>
-            {sessionImportError && (
-              <p className="text-[10px] text-destructive">{sessionImportError}</p>
-            )}
-          </form>
+
+            {/* 3.2 Competitive Companion Live Status (Port 10043) */}
+            <div className="p-2 rounded-lg border border-border/60 bg-card/40 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span className="text-[11px] font-medium text-foreground truncate">
+                  Competitive Companion
+                </span>
+                <span className="text-[10px] font-mono text-muted-foreground">(:10043)</span>
+              </div>
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                Click green <strong>+</strong> on CF
+              </span>
+            </div>
+
+            {/* 3.3 Add by URL / ID form */}
+            <form onSubmit={handleSessionImportAdd} className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-foreground flex items-center justify-between">
+                <span>Add by URL or ID</span>
+              </label>
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  placeholder="LeetCode URL or CF ID (e.g. 2290H)..."
+                  value={sessionUrlInput}
+                  onChange={(e) => setSessionUrlInput(e.target.value)}
+                  disabled={isSessionImporting}
+                  className="flex-1 px-2.5 py-1 text-xs bg-background border border-border/70 rounded-md text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <button
+                  type="submit"
+                  disabled={isSessionImporting || !sessionUrlInput.trim()}
+                  className="px-2.5 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50 flex items-center gap-1 cursor-pointer shrink-0"
+                >
+                  {isSessionImporting ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <>
+                      <Plus size={12} />
+                      <span>Add</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              {sessionImportError && (
+                <p className="text-[10px] text-destructive">{sessionImportError}</p>
+              )}
+            </form>
+
+            {/* 3.4 Collapsible Bookmarklet Option */}
+            <details className="group border border-border/40 rounded-lg p-2 text-xs">
+              <summary className="font-medium text-muted-foreground hover:text-foreground cursor-pointer flex items-center justify-between list-none">
+                <span className="flex items-center gap-1.5 text-[11px]">
+                  <Bookmark size={12} className="text-sky-400" />
+                  <span>Alternative: Codeforces Bookmarklet</span>
+                </span>
+                <span className="text-[10px] text-muted-foreground group-open:rotate-180 transition-transform">▼</span>
+              </summary>
+
+              <div className="pt-2 space-y-2">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Bypasses Cloudflare. Drag button below to bookmarks bar or copy script:
+                </p>
+
+                <div className="flex items-center gap-2">
+                  <a
+                    ref={bookmarkAnchorRef}
+                    href="#"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/uri-list', bookmarkletScript);
+                      e.dataTransfer.setData('text/plain', bookmarkletScript);
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigator.clipboard.writeText(bookmarkletScript);
+                      setCopiedBookmarklet(true);
+                      setTimeout(() => setCopiedBookmarklet(false), 2000);
+                    }}
+                    title="Drag to your browser bookmarks bar (or click to copy code)"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md bg-sky-500 text-white hover:bg-sky-400 shadow-xs cursor-grab active:cursor-grabbing transition-colors shrink-0"
+                  >
+                    <Bookmark size={12} />
+                    <span>Add to Codev</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(bookmarkletScript);
+                      setCopiedBookmarklet(true);
+                      setTimeout(() => setCopiedBookmarklet(false), 2000);
+                    }}
+                    className="px-2 py-1 text-[11px] font-medium rounded border border-border/70 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    {copiedBookmarklet ? (
+                      <>
+                        <Check size={11} className="text-emerald-400" />
+                        <span className="text-emerald-400 font-semibold">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={11} />
+                        <span>Copy Script</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onAddProblem?.(SAMPLE_SIMULATED_CF_PROBLEM);
+                    }}
+                    className="ml-auto text-[10px] text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+                    title="Simulate importing a Codeforces problem into the queue"
+                  >
+                    Test CF
+                  </button>
+                </div>
+              </div>
+            </details>
+          </div>
 
           {/* 4. Curated Wishlists / Problem Collections */}
           <div className="space-y-2 pt-2 border-t border-border/40">
@@ -1000,6 +1223,56 @@ export function ContextColumn({
               className="px-3 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 cursor-pointer shadow-xs"
             >
               Apply to Arena
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MANUAL PROBLEM TEXT IMPORT MODAL ────────────────────────── */}
+      {isManualPasteModalOpen && (
+        <div className="absolute inset-0 z-40 bg-background/90 backdrop-blur-xs flex flex-col p-3 space-y-2.5 animate-in fade-in-0 duration-150">
+          <div className="flex items-center justify-between border-b border-border/60 pb-2">
+            <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <ClipboardPaste size={14} className="text-emerald-400" />
+              <span>Smart Problem Text Paste</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsManualPasteModalOpen(false)}
+              className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            Paste the raw problem text or example box from Codeforces, LeetCode, or AtCoder. Codev will automatically detect the title, limits, and all test cases:
+          </p>
+
+          <div className="flex-1 min-h-0 flex flex-col">
+            <textarea
+              value={manualProblemText}
+              onChange={(e) => setManualProblemText(e.target.value)}
+              placeholder="Paste problem text here (e.g. E. Arithmetic Subarray \n time limit per test 6s \n ... \n input \n 3 \n ... \n output \n ...)"
+              className="flex-1 p-2 rounded-lg bg-card border border-border/70 font-mono text-xs text-foreground resize-none focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
+            <button
+              type="button"
+              onClick={() => setIsManualPasteModalOpen(false)}
+              className="px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleApplyManualProblemPaste}
+              disabled={!manualProblemText.trim()}
+              className="px-3 py-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg disabled:opacity-50 cursor-pointer shadow-xs"
+            >
+              Parse & Add to Playlist
             </button>
           </div>
         </div>

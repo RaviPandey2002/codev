@@ -1,8 +1,9 @@
-import { AlertCircle, ArrowLeft, Code2, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, Code2, Loader2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { getRoomDetailsApi } from '@/api/rooms';
+import { getLatestCompanionProblemApi } from '@/api/problems';
 import { ContextColumn } from '@/components/room/ContextColumn';
 import { EditorColumn } from '@/components/room/EditorColumn';
 import { IoColumn } from '@/components/room/IoColumn';
@@ -13,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { useRoomWorkspace } from '@/hooks/useRoomWorkspace';
 import { useWorkspaceLayout } from '@/hooks/useWorkspaceLayout';
 import { getApiErrorMessage } from '@/lib/api';
+import { decodeProblemData } from '@/lib/problemImporter';
 import { useAuthStore } from '@/stores/auth.store';
 import type { ArenaPlatform, RoomDTO, RoomRole } from '@codev/shared';
 
@@ -27,6 +29,7 @@ export default function RoomPage() {
   const [copiedId, setCopiedId] = useState(false);
   const [peerCount, setPeerCount] = useState(1);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [importNotification, setImportNotification] = useState<{ title: string; count: number } | null>(null);
 
   // Personal safety lock: lets any editor switch to read-only viewing mode
   const [isSelfViewOnly, setIsSelfViewOnly] = useState(false);
@@ -141,6 +144,72 @@ export default function RoomPage() {
       mounted = false;
     };
   }, [roomId, setLanguage]);
+
+  // Listen for externally imported problems (Bookmarklet, extension, or deep link)
+  useEffect(() => {
+    // Set tab name so bookmarklet window.open targets this existing workspace tab directly
+    window.name = 'codev_workspace';
+
+    const processHash = () => {
+      const hash = window.location.hash;
+      if (hash.startsWith('#addProblem=')) {
+        const encoded = hash.replace('#addProblem=', '');
+        const problem = decodeProblemData(encoded);
+        if (problem) {
+          handleAddToQueue(problem, true);
+          setImportNotification({
+            title: problem.title,
+            count: problem.sampleCases?.length || 0,
+          });
+          setTimeout(() => setImportNotification(null), 4500);
+        }
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    };
+
+    processHash();
+    window.addEventListener('hashchange', processHash);
+
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data?.type === 'CODEV_ADD_PROBLEM' && e.data.problem) {
+        handleAddToQueue(e.data.problem, true);
+        setImportNotification({
+          title: e.data.problem.title,
+          count: e.data.problem.sampleCases?.length || 0,
+        });
+        setTimeout(() => setImportNotification(null), 4500);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      window.removeEventListener('hashchange', processHash);
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [handleAddToQueue]);
+
+  // Listen for Competitive Companion problems from server (:10043)
+  useEffect(() => {
+    let lastChecked = Date.now();
+    const interval = setInterval(async () => {
+      try {
+        const latest = await getLatestCompanionProblemApi(lastChecked);
+        if (latest && latest.problem) {
+          lastChecked = latest.timestamp;
+          handleAddToQueue(latest.problem, true);
+          setImportNotification({
+            title: `[Companion] ${latest.problem.title}`,
+            count: latest.problem.sampleCases?.length || 0,
+          });
+          setTimeout(() => setImportNotification(null), 4500);
+        }
+      } catch {
+        // Silently ignore if unauthenticated or network hiccup
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [handleAddToQueue]);
 
   const copyRoomLink = () => {
     if (!roomId) return;
@@ -311,6 +380,7 @@ export default function RoomPage() {
             onAddProblem={handleAddToQueue}
             onRemoveProblem={handleRemoveFromQueue}
             onUpdateStatus={handleUpdateProblemStatus}
+            roomId={roomId || room.id}
           />
 
           <EditorColumn
@@ -376,6 +446,31 @@ export default function RoomPage() {
           {renderGutterBetween(1)}
         </div>
       </main>
+
+      {/* External Problem Ingestion Toast */}
+      {importNotification && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-emerald-500/30 bg-card/95 text-foreground backdrop-blur-md shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className="h-7 w-7 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+            <CheckCircle2 size={16} />
+          </div>
+          <div className="space-y-0.5 min-w-0 pr-1">
+            <p className="text-xs font-semibold text-foreground truncate max-w-[280px]">
+              {importNotification.title}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              Added to Session Playlist • {importNotification.count} testcases loaded
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setImportNotification(null)}
+            className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer ml-1"
+            title="Dismiss"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

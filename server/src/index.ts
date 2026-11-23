@@ -1,5 +1,6 @@
 import app from "./app";
 import { roomHub } from "./websocket/room_hub";
+import { startCompanionListener } from "./services/companion_listener.js";
 
 const PORT = Number(process.env.PORT) || 3007;
 
@@ -11,6 +12,9 @@ const start = async () => {
     });
 
     console.log(`Server is running on http://localhost:${PORT}`);
+
+    // Start Competitive Companion listener on port 10043 (standard CP port)
+    startCompanionListener();
   } catch (err) {
     app.log.error(err);
     process.exit(1);
