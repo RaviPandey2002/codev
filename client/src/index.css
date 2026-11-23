@@ -125,7 +125,7 @@
     scrollbar-width: thin;
     scrollbar-color: rgba(140, 140, 160, 0.25) transparent;
   }
-  body {
+  html, body {
     @apply bg-background text-foreground;
   }
   html {

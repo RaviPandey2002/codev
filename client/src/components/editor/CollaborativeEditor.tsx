@@ -343,6 +343,12 @@ export function CollaborativeEditor({
         width="100%"
         beforeMount={handleBeforeMount}
         theme={theme === 'dark' ? 'codev-dark' : 'light'}
+        loading={
+          <div className="h-full w-full flex items-center justify-center bg-background text-muted-foreground gap-2 text-xs font-mono">
+            <Loader2 size={14} className="animate-spin text-primary" />
+            <span>Initializing editor...</span>
+          </div>
+        }
         language={language}
         onMount={handleEditorDidMount}
         options={{

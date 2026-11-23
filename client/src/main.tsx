@@ -1,11 +1,14 @@
 import { StrictMode, useEffect, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
-import { Loader2 } from 'lucide-react'
 import './index.css'
+
+// Ensure theme initialization runs immediately on entry bundle execution
+import '@/stores/theme.store'
 
 import { useAuthStore } from '@/stores/auth.store'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { LoadingScreen } from '@/components/LoadingScreen'
 
 const LandingPage = lazy(() => import('@/pages/LandingPage'))
 const LoginPage = lazy(() => import('@/pages/LoginPage'))
@@ -14,11 +17,7 @@ const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const RoomPage = lazy(() => import('@/pages/RoomPage'))
 
 function PageFallback() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
-      <Loader2 size={24} className="animate-spin text-primary" />
-    </div>
-  )
+  return <LoadingScreen />
 }
 
 function App() {
