@@ -33,13 +33,19 @@ interface CodeforcesApiResponse {
 export async function importProblem(input: ImportProblemInput): Promise<ProblemData> {
   const trimmed = input.urlOrId.trim();
 
-  // 1. Check for LeetCode
-  const isLeetCode =
-    input.platform === 'LEETCODE' ||
-    trimmed.includes('leetcode.com') ||
-    (!trimmed.match(/^\d+[A-Za-z]/) && !trimmed.includes('codeforces'));
+  // 1. Check for LeetCode (explicit URLs always override default room platform)
+  const looksLikeCfUrl = trimmed.toLowerCase().includes('codeforces.com');
+  const looksLikeCfId = /^\d+\s*[/_-]?\s*[A-Za-z0-9]+$/.test(trimmed);
+  const looksLikeLcUrl = trimmed.toLowerCase().includes('leetcode.com');
+  const looksLikeLcSlug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(trimmed) && !looksLikeCfId;
 
-  if (isLeetCode && (trimmed.includes('leetcode.com') || input.platform === 'LEETCODE')) {
+  const isLeetCode =
+    looksLikeLcUrl ||
+    (!looksLikeCfUrl &&
+      !looksLikeCfId &&
+      (input.platform === 'LEETCODE' || (!input.platform && looksLikeLcSlug)));
+
+  if (isLeetCode) {
     let slug = trimmed;
     const match = trimmed.match(/leetcode\.com\/problems\/([^/?#]+)/);
     if (match?.[1]) {

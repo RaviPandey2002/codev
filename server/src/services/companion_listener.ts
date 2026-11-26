@@ -22,22 +22,61 @@ export interface CompanionPayload {
   inputSpecification?: string;
   outputSpecification?: string;
   platform?: ArenaPlatform;
+  roomId?: string;
 }
 
-let latestProblem: { problem: ProblemData; timestamp: number } | null = null;
+const GLOBAL_CHANNEL = 'global';
+const MAX_CHANNELS = 500;
+const latestByChannel = new Map<string, { problem: ProblemData; timestamp: number }>();
 
-export function getLatestCompanionProblem(sinceTimestamp = 0): { problem: ProblemData; timestamp: number } | null {
-  if (latestProblem && latestProblem.timestamp > sinceTimestamp) {
-    return latestProblem;
+function normalizeChannel(roomId?: string): string {
+  const trimmed = roomId?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : GLOBAL_CHANNEL;
+}
+
+/**
+ * Retrieves the latest ingested problem newer than `sinceTimestamp`.
+ * Checks room-specific channel first; falls back to `'global'` (e.g. standalone Competitive Companion)
+ * unless `COMPANION_STRICT_ROOM_SCOPING === 'true'`.
+ */
+export function getLatestCompanionProblem(
+  sinceTimestamp = 0,
+  roomId?: string
+): { problem: ProblemData; timestamp: number } | null {
+  const channel = normalizeChannel(roomId);
+  const scoped = latestByChannel.get(channel);
+  if (scoped && scoped.timestamp > sinceTimestamp) {
+    return scoped;
   }
+
+  const strictScoping = process.env.COMPANION_STRICT_ROOM_SCOPING === 'true';
+  if (channel !== GLOBAL_CHANNEL && !strictScoping) {
+    const globalEntry = latestByChannel.get(GLOBAL_CHANNEL);
+    if (globalEntry && globalEntry.timestamp > sinceTimestamp) {
+      return globalEntry;
+    }
+  }
+
   return null;
 }
 
-export function setLatestCompanionProblem(data: ProblemData) {
-  latestProblem = {
+export function setLatestCompanionProblem(data: ProblemData, roomId?: string) {
+  const channel = normalizeChannel(roomId);
+
+  if (latestByChannel.size >= MAX_CHANNELS && !latestByChannel.has(channel)) {
+    const oldestKey = latestByChannel.keys().next().value;
+    if (oldestKey) latestByChannel.delete(oldestKey);
+  }
+
+  latestByChannel.delete(channel);
+  latestByChannel.set(channel, {
     problem: data,
     timestamp: Date.now(),
-  };
+  });
+}
+
+export function clearCompanionProblemsForTests() {
+  latestByChannel.clear();
 }
 
 export function mapCompanionPayloadToProblem(body: CompanionPayload): ProblemData {
@@ -90,10 +129,19 @@ export function mapCompanionPayloadToProblem(body: CompanionPayload): ProblemDat
 let serverInstance: http.Server | null = null;
 
 /**
- * Starts an HTTP server on port 10043 (standard Competitive Companion port).
+ * Starts an HTTP server on port 10043 (or COMPANION_PORT env var) for local Competitive Companion requests.
  */
-export function startCompanionListener(port = 10043): http.Server | null {
+export function startCompanionListener(
+  port = process.env.COMPANION_PORT !== undefined ? Number(process.env.COMPANION_PORT) : 10043
+): http.Server | null {
+  if (port <= 0 || process.env.ENABLE_COMPANION_LISTENER === 'false') {
+    console.info('[Competitive Companion] Standalone local listener disabled via environment config.');
+    return null;
+  }
+
   if (serverInstance) return serverInstance;
+
+  const host = process.env.COMPANION_HOST || '127.0.0.1';
 
   const server = http.createServer((req, res) => {
     // CORS headers for browser extension
@@ -107,7 +155,9 @@ export function startCompanionListener(port = 10043): http.Server | null {
       return;
     }
 
-    if (req.method === 'GET' && req.url === '/health') {
+    const reqUrl = new URL(req.url || '/', `http://${host}:${port}`);
+
+    if (req.method === 'GET' && reqUrl.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', service: 'Codev Companion Listener' }));
       return;
@@ -123,8 +173,34 @@ export function startCompanionListener(port = 10043): http.Server | null {
         try {
           const parsed = JSON.parse(body) as CompanionPayload;
           const problemData = mapCompanionPayloadToProblem(parsed);
-          setLatestCompanionProblem(problemData);
-          console.info(`[Competitive Companion] Received problem: "${problemData.title}" with ${problemData.sampleCases?.length || 0} cases.`);
+          const roomId = reqUrl.searchParams.get('roomId') || parsed.roomId;
+          setLatestCompanionProblem(problemData, roomId);
+
+          // Asynchronously enrich if LeetCode problem arrived without snippets
+          if (
+            problemData.platform === 'LEETCODE' &&
+            (!problemData.codeSnippets || problemData.codeSnippets.length === 0) &&
+            (problemData.url || parsed.url)
+          ) {
+            import('./problems.service.js')
+              .then(({ importProblem }) =>
+                importProblem({
+                  urlOrId: problemData.url || parsed.url || '',
+                  platform: 'LEETCODE',
+                })
+              )
+              .then((enriched) => {
+                if (enriched?.codeSnippets && enriched.codeSnippets.length > 0) {
+                  problemData.codeSnippets = enriched.codeSnippets;
+                  setLatestCompanionProblem(problemData, roomId);
+                }
+              })
+              .catch(() => {});
+          }
+
+          console.info(
+            `[Competitive Companion] Received problem: "${problemData.title}" (${problemData.sampleCases?.length || 0} cases, channel=${roomId || GLOBAL_CHANNEL}).`
+          );
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, title: problemData.title }));
@@ -148,8 +224,8 @@ export function startCompanionListener(port = 10043): http.Server | null {
     }
   });
 
-  server.listen(port, () => {
-    console.info(`[Competitive Companion] Listener active on http://localhost:${port}`);
+  server.listen(port, host, () => {
+    console.info(`[Competitive Companion] Listener active on http://${host}:${port}`);
   });
 
   serverInstance = server;

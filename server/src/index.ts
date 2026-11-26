@@ -13,8 +13,10 @@ const start = async () => {
 
     console.log(`Server is running on http://localhost:${PORT}`);
 
-    // Start Competitive Companion listener on port 10043 (standard CP port)
-    startCompanionListener();
+    // Start Competitive Companion listener on port 10043 (or disabled in cloud PaaS)
+    const companionPort =
+      process.env.COMPANION_PORT !== undefined ? Number(process.env.COMPANION_PORT) : 10043;
+    startCompanionListener(companionPort);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

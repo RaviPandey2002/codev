@@ -1,13 +1,18 @@
-import { describe, it } from 'node:test';
+import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mapCompanionPayloadToProblem,
   setLatestCompanionProblem,
   getLatestCompanionProblem,
+  clearCompanionProblemsForTests,
   type CompanionPayload,
 } from '../services/companion_listener.js';
 
 describe('Companion Listener Rich Statements & Metadata', () => {
+  afterEach(() => {
+    clearCompanionProblemsForTests();
+    delete process.env.COMPANION_STRICT_ROOM_SCOPING;
+  });
   it('preserves full rich HTML description, KaTeX formulas, and metadata from custom extension', () => {
     const rawPayload: CompanionPayload = {
       name: '2285E. Arithmetic Subarray',
@@ -119,5 +124,25 @@ describe('Companion Listener Rich Statements & Metadata', () => {
     // After timestamp returns null
     const noNewProblem = getLatestCompanionProblem(Date.now() + 5000);
     assert.equal(noNewProblem, null);
+  });
+
+  it('isolates companion problems by roomId while supporting global fallback unless strict', () => {
+    const before = Date.now() - 10;
+    const probA = mapCompanionPayloadToProblem({ name: 'Room A Problem', tests: [] });
+    const probGlobal = mapCompanionPayloadToProblem({ name: 'Global Problem', tests: [] });
+
+    setLatestCompanionProblem(probA, 'room-alpha');
+    assert.equal(getLatestCompanionProblem(before, 'room-alpha')?.problem.title, 'Room A Problem');
+    // Room B should NOT see Room A's scoped problem
+    assert.equal(getLatestCompanionProblem(before, 'room-beta'), null);
+
+    // Legacy global problem falls back by default
+    setLatestCompanionProblem(probGlobal);
+    assert.equal(getLatestCompanionProblem(before, 'room-beta')?.problem.title, 'Global Problem');
+
+    // Strict scoping disables global fallback
+    process.env.COMPANION_STRICT_ROOM_SCOPING = 'true';
+    assert.equal(getLatestCompanionProblem(before, 'room-beta'), null);
+    assert.equal(getLatestCompanionProblem(before, 'room-alpha')?.problem.title, 'Room A Problem');
   });
 });
