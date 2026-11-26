@@ -104,3 +104,33 @@ export interface QueueProblemItem {
   status: QueueProblemStatus;
   timeSpentSeconds?: number;
 }
+
+export interface WishlistDTO {
+  id: string;
+  ownerId: string;
+  ownerUsername?: string;
+  roomId: string | null;
+  name: string;
+  description: string | null;
+  visibility: 'PRIVATE' | 'ROOM' | 'PUBLIC';
+  itemCount: number;
+  problemKeys: string[];
+  isOwner: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WishlistItemDTO {
+  id: string;
+  wishlistId: string;
+  problemId: string;
+  canonicalKey: string;
+  position: number;
+  note: string | null;
+  addedAt: string;
+  problem: ProblemData;
+}
+
+export interface WishlistWithItemsDTO extends WishlistDTO {
+  items: WishlistItemDTO[];
+}

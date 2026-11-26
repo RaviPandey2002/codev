@@ -36,6 +36,13 @@
       "when": 1795141864266,
       "tag": "0004_harsh_bug",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795714959131,
+      "tag": "0005_careless_sabra",
+      "breakpoints": true
     }
   ]
 }
