@@ -1,0 +1,147 @@
+/* CodeV Injected Button & Notification Styles */
+
+/* Codeforces top-right utility strip above problem header */
+.codev-cf-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+/* LeetCode inline title-row wrapper */
+.codev-btn-container {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: auto;
+  vertical-align: middle;
+}
+
+.codev-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 11px;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  letter-spacing: -0.01em;
+  color: #f8fafc !important;
+  background: #0f172a !important;
+  border: 1px solid rgba(16, 185, 129, 0.45) !important;
+  border-radius: 9999px !important;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(15, 23, 42, 0.1) !important;
+  transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, transform 0.12s ease !important;
+  text-decoration: none !important;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.codev-btn svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: #34d399;
+  transition: transform 0.16s ease, color 0.16s ease;
+}
+
+.codev-btn:hover:not(:disabled) {
+  background: #064e3b !important;
+  border-color: #10b981 !important;
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.28) !important;
+  transform: translateY(-1px);
+}
+
+.codev-btn:hover:not(:disabled) svg {
+  color: #6ee7b7;
+  transform: scale(1.06);
+}
+
+.codev-btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 1px 2px rgba(16, 185, 129, 0.2) !important;
+}
+
+.codev-btn.codev-loading {
+  background: #0c4a6e !important;
+  border-color: rgba(56, 189, 248, 0.55) !important;
+  color: #e0f2fe !important;
+  cursor: wait;
+}
+
+.codev-btn.codev-loading svg {
+  color: #38bdf8;
+  animation: codev-spin 0.9s linear infinite;
+}
+
+.codev-btn.codev-success {
+  background: #065f46 !important;
+  border-color: #34d399 !important;
+  color: #ecfdf5 !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35) !important;
+}
+
+.codev-btn.codev-success svg {
+  color: #6ee7b7;
+}
+
+.codev-btn.codev-error {
+  background: #7f1d1d !important;
+  border-color: rgba(248, 113, 113, 0.6) !important;
+  color: #fef2f2 !important;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.28) !important;
+}
+
+.codev-btn.codev-error svg {
+  color: #fca5a5;
+}
+
+@keyframes codev-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Floating Notification Toast */
+.codev-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid #10b981;
+  border-radius: 10px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(16, 185, 129, 0.18);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  animation: codev-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.codev-toast svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+@keyframes codev-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

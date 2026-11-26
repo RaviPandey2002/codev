@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeV Arena Companion</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <svg class="logo-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+        <span class="brand-title">CodeV Arena</span>
+      </div>
+      <div class="header-actions">
+        <div id="status-pill" class="status-pill checking">
+          <span class="status-dot"></span>
+          <span id="status-text">Checking...</span>
+        </div>
+        <button id="settings-toggle-btn" class="icon-btn" type="button" title="Server Connection Settings" aria-label="Connection Settings">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Collapsible Server Settings Panel -->
+    <section id="settings-panel" class="settings-panel hidden">
+      <div class="settings-title">Target Domain / Server Config</div>
+      <label class="field">
+        <span>Backend API URL</span>
+        <input id="input-api-url" type="url" placeholder="https://api.yourdomain.com" />
+      </label>
+      <label class="field">
+        <span>Web App URL</span>
+        <input id="input-client-url" type="url" placeholder="https://codev.yourdomain.com" />
+      </label>
+      <div class="settings-actions">
+        <button id="reset-settings-btn" type="button" class="btn-secondary">Reset</button>
+        <button id="save-settings-btn" type="button" class="btn-save">Save &amp; Test</button>
+      </div>
+    </section>
+
+    <!-- Main Content -->
+    <main class="content">
+      <!-- Active Tab Card -->
+      <div id="active-card" class="card">
+        <div class="card-header">
+          <span class="card-label">Current Page</span>
+          <span id="platform-badge" class="badge">--</span>
+        </div>
+        <div id="problem-title" class="problem-title">Detecting problem...</div>
+        <div id="problem-meta" class="problem-meta"></div>
+
+        <button id="send-btn" class="btn btn-primary" disabled>
+          <span>⚡ Send to CodeV Arena</span>
+        </button>
+      </div>
+
+      <!-- Feedback Banner -->
+      <div id="feedback-banner" class="feedback-banner hidden"></div>
+
+      <!-- Last Sent -->
+      <div id="last-sent-section" class="last-sent hidden">
+        <span class="last-sent-label">Last Sent:</span>
+        <span id="last-sent-title" class="last-sent-title">--</span>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <a id="arena-footer-link" href="http://localhost:5173" target="_blank" class="footer-link">
+        Open CodeV Arena (localhost:5173) ↗
+      </a>
+    </footer>
+  </div>
+
+  <script src="../config.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
