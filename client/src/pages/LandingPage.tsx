@@ -567,6 +567,13 @@ export default function LandingPage() {
       <footer className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 text-center text-xs text-muted-foreground/60 border-t border-border/40 z-10 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono">
         <div>CodeV &middot; Real-Time Collaborative Code Editor</div>
         <div className="flex items-center gap-4">
+          <Link
+            to="/extension"
+            className="hover:text-foreground transition-colors cursor-pointer"
+          >
+            Chrome Extension
+          </Link>
+          <span>&middot;</span>
           <a
             href="https://github.com/RaviPandey2002/codev"
             target="_blank"

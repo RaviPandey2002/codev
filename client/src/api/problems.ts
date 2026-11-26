@@ -7,11 +7,12 @@ export async function importProblemApi(data: ImportProblemInput): Promise<Proble
 }
 
 export async function getLatestCompanionProblemApi(
-  since?: number
+  since?: number,
+  roomId?: string
 ): Promise<{ problem: ProblemData; timestamp: number } | null> {
   const res = await api.get<{ latest: { problem: ProblemData; timestamp: number } | null }>(
     '/problems/companion/latest',
-    { params: { since } }
+    { params: { since, roomId } }
   );
   return res.data.latest;
 }

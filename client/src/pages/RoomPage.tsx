@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { getRoomDetailsApi } from '@/api/rooms';
-import { getLatestCompanionProblemApi } from '@/api/problems';
+import { getLatestCompanionProblemApi, importProblemApi } from '@/api/problems';
 import { ContextColumn } from '@/components/room/ContextColumn';
 import { EditorColumn } from '@/components/room/EditorColumn';
 import { IoColumn } from '@/components/room/IoColumn';
@@ -170,14 +170,34 @@ export default function RoomPage() {
     processHash();
     window.addEventListener('hashchange', processHash);
 
-    const handleMessage = (e: MessageEvent) => {
+    const handleMessage = async (e: MessageEvent) => {
       if (e.data?.type === 'CODEV_ADD_PROBLEM' && e.data.problem) {
-        handleAddToQueue(e.data.problem, true);
+        const prob = e.data.problem;
+        handleAddToQueue(prob, true);
         setImportNotification({
-          title: e.data.problem.title,
-          count: e.data.problem.sampleCases?.length || 0,
+          title: prob.title,
+          count: prob.sampleCases?.length || 0,
         });
         setTimeout(() => setImportNotification(null), 4500);
+
+        // Fallback: If snippets are missing for a LeetCode problem, enrich via importProblemApi
+        if (
+          prob.platform === 'LEETCODE' &&
+          (!prob.codeSnippets || prob.codeSnippets.length === 0) &&
+          prob.url
+        ) {
+          try {
+            const enriched = await importProblemApi({
+              urlOrId: prob.url,
+              platform: 'LEETCODE',
+            });
+            if (enriched?.codeSnippets && enriched.codeSnippets.length > 0) {
+              handleAddToQueue({ ...prob, codeSnippets: enriched.codeSnippets }, true);
+            }
+          } catch {
+            // Keep existing problem without snippets
+          }
+        }
       }
     };
     window.addEventListener('message', handleMessage);
@@ -188,12 +208,12 @@ export default function RoomPage() {
     };
   }, [handleAddToQueue]);
 
-  // Listen for Competitive Companion problems from server (:10043)
+  // Listen for Competitive Companion & Chrome Extension problems scoped to this room
   useEffect(() => {
     let lastChecked = Date.now();
     const interval = setInterval(async () => {
       try {
-        const latest = await getLatestCompanionProblemApi(lastChecked);
+        const latest = await getLatestCompanionProblemApi(lastChecked, roomId);
         if (latest && latest.problem) {
           lastChecked = latest.timestamp;
           handleAddToQueue(latest.problem, true);
@@ -209,7 +229,7 @@ export default function RoomPage() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [handleAddToQueue]);
+  }, [handleAddToQueue, roomId]);
 
   const copyRoomLink = () => {
     if (!roomId) return;

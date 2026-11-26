@@ -15,6 +15,7 @@ const LoginPage = lazy(() => import('@/pages/LoginPage'))
 const RegisterPage = lazy(() => import('@/pages/RegisterPage'))
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const RoomPage = lazy(() => import('@/pages/RoomPage'))
+const ExtensionPage = lazy(() => import('@/pages/ExtensionPage'))
 
 function PageFallback() {
   return <LoadingScreen />
@@ -35,6 +36,7 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/extension" element={<ExtensionPage />} />
 
           {/* Protected Workspace Routes */}
           <Route element={<ProtectedRoute />}>

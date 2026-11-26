@@ -21,6 +21,7 @@ import {
   FileCode,
   Trash2,
   Cpu,
+  Puzzle,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -324,6 +325,12 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 self-start sm:self-auto">
+            <Button asChild variant="outline" size="sm" className="gap-1.5 text-xs font-medium cursor-pointer">
+              <Link to="/extension">
+                <Puzzle size={13} className="text-emerald-500" />
+                <span>Extension</span>
+              </Link>
+            </Button>
             <Button
               size="sm"
               onClick={() => setIsModalOpen(true)}
