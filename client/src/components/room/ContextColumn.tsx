@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import DOMPurify from 'dompurify';
 import {
+  Bookmark,
   BookOpen,
   Check,
   CheckCircle2,
@@ -10,6 +12,7 @@ import {
   Clock,
   Code2,
   Cpu,
+  Download,
   ExternalLink,
   Eye,
   EyeOff,
@@ -28,11 +31,20 @@ import {
   Tag,
   Trash2,
 } from 'lucide-react';
+import { getExtensionDownloadUrl } from '@/api/extension';
 import { importProblemApi } from '@/api/problems';
+import { listWishlistsApi } from '@/api/wishlists';
 import { type ColumnId, DEFAULT_PROBLEM_NOTES } from '@/components/room/room.constants';
-import { CURATED_WISHLISTS, type CuratedWishlist } from '@/components/room/wishlists.constants';
+import { SaveToWishlistButton } from '@/components/room/SaveToWishlistButton';
+import { WishlistsPanel } from '@/components/room/WishlistsPanel';
 import { getApiErrorMessage } from '@/lib/api';
-import type { ArenaPlatform, ProblemData, QueueProblemItem, QueueProblemStatus } from '@codev/shared';
+import type {
+  ArenaPlatform,
+  ProblemData,
+  QueueProblemItem,
+  QueueProblemStatus,
+  WishlistDTO,
+} from '@codev/shared';
 
 // ─── Utility ────────────────────────────────────────────────────────────────
 
@@ -110,8 +122,34 @@ export function ContextColumn({
   const showFolded = isContextFolded && maximizedColumn !== 'context';
   const isCpMode = Boolean(arenaPlatform);
 
-  // Active view tab: 'PROBLEM' | 'SESSION' | 'NOTES'
-  const [activeTab, setActiveTab] = useState<'PROBLEM' | 'SESSION' | 'NOTES'>(isCpMode ? 'PROBLEM' : 'NOTES');
+  // Active view tab: 'PROBLEM' | 'SESSION' | 'WISHLISTS' | 'NOTES'
+  const [activeTab, setActiveTab] = useState<'PROBLEM' | 'SESSION' | 'WISHLISTS' | 'NOTES'>(
+    isCpMode ? 'PROBLEM' : 'NOTES'
+  );
+
+  // Persistent database-backed wishlists state (synced between Problem, Session, and Wishlists tabs)
+  const [wishlists, setWishlists] = useState<WishlistDTO[]>([]);
+  const [selectedWishlistId, setSelectedWishlistId] = useState<string | null>(null);
+  const [isLoadingWishlists, setIsLoadingWishlists] = useState(false);
+  const [wishlistsError, setWishlistsError] = useState<string | null>(null);
+
+  const refreshWishlists = useCallback(async () => {
+    if (!isCpMode) return;
+    try {
+      setIsLoadingWishlists(true);
+      setWishlistsError(null);
+      const data = await listWishlistsApi(_roomId);
+      setWishlists(data);
+    } catch (err) {
+      setWishlistsError(getApiErrorMessage(err, 'Failed to load wishlists'));
+    } finally {
+      setIsLoadingWishlists(false);
+    }
+  }, [isCpMode, _roomId]);
+
+  useEffect(() => {
+    refreshWishlists();
+  }, [refreshWishlists]);
 
   // Session timer state
   const [sessionSeconds, setSessionSeconds] = useState(0);
@@ -158,24 +196,6 @@ export function ContextColumn({
     } finally {
       setIsSessionImporting(false);
     }
-  };
-
-  const handlePullWishlist = (wishlist: CuratedWishlist) => {
-    const queueBefore = queue.length;
-    wishlist.problems.forEach((p, idx) => {
-      onAddProblem?.(
-        {
-          title: p.title,
-          platform: p.platform,
-          url: p.urlOrId,
-          difficulty: p.difficulty,
-          sampleCases: p.sampleCases,
-          codeSnippets: p.codeSnippets,
-          description: `Imported from curated wishlist: ${wishlist.title}`,
-        },
-        idx === 0 && queueBefore === 0
-      );
-    });
   };
 
   // Problem URL import state
@@ -354,6 +374,26 @@ export function ContextColumn({
           </button>
         )}
 
+        {isCpMode && (
+          <>
+            <div className="w-4 h-[1px] bg-border/50" />
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('WISHLISTS');
+                onToggleContextFold(false);
+              }}
+              className="py-2.5 px-1 rounded-md flex flex-col items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer"
+              title="Saved Wishlists"
+            >
+              <Bookmark size={13} className="text-amber-500 shrink-0" />
+              <span className="[writing-mode:vertical-rl] tracking-wide text-[11px] whitespace-nowrap">
+                Wishlists
+              </span>
+            </button>
+          </>
+        )}
+
         <div className="w-4 h-[1px] bg-border/50" />
 
         <button
@@ -383,13 +423,13 @@ export function ContextColumn({
       className={`${isHidden ? 'hidden' : 'flex'} min-h-0 min-w-0 h-full rounded-xl border border-border/70 bg-card flex-col overflow-hidden shadow-xs relative`}
     >
       {/* ── Panel Header with Tab Navigation ────────────────────────────── */}
-      <div className="h-9 border-b border-border/60 bg-muted/35 px-2.5 flex items-center justify-between gap-1 shrink-0 select-none">
-        <div className="flex items-center gap-1">
+      <div className="h-9 border-b border-border/60 bg-muted/35 px-2 flex items-center justify-between gap-1 shrink-0 select-none">
+        <div className="flex items-center gap-1 min-w-0 overflow-x-auto no-scrollbar">
           {isCpMode && (
             <button
               type="button"
               onClick={() => setActiveTab('PROBLEM')}
-              className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`px-1.5 py-1 rounded text-[11px] font-medium flex items-center gap-1 shrink-0 transition-colors cursor-pointer ${
                 activeTab === 'PROBLEM'
                   ? 'bg-background text-foreground font-semibold shadow-xs border border-border/60'
                   : 'text-muted-foreground hover:text-foreground'
@@ -404,7 +444,7 @@ export function ContextColumn({
             <button
               type="button"
               onClick={() => setActiveTab('SESSION')}
-              className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`px-1.5 py-1 rounded text-[11px] font-medium flex items-center gap-1 shrink-0 transition-colors cursor-pointer ${
                 activeTab === 'SESSION'
                   ? 'bg-background text-foreground font-semibold shadow-xs border border-border/60'
                   : 'text-muted-foreground hover:text-foreground'
@@ -413,8 +453,28 @@ export function ContextColumn({
               <ListOrdered size={12} className="text-amber-500" />
               <span>Session</span>
               {queue && queue.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-500 dark:text-amber-300 text-[10px] font-bold">
+                <span className="px-1 py-0.2 rounded-full bg-amber-500/20 text-amber-500 dark:text-amber-300 text-[10px] font-bold">
                   {queue.length}
+                </span>
+              )}
+            </button>
+          )}
+
+          {isCpMode && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('WISHLISTS')}
+              className={`px-1.5 py-1 rounded text-[11px] font-medium flex items-center gap-1 shrink-0 transition-colors cursor-pointer ${
+                activeTab === 'WISHLISTS'
+                  ? 'bg-background text-foreground font-semibold shadow-xs border border-border/60'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Bookmark size={12} className="text-amber-500" />
+              <span>Wishlists</span>
+              {wishlists.length > 0 && (
+                <span className="px-1 py-0.2 rounded-full bg-muted text-muted-foreground text-[10px] font-bold">
+                  {wishlists.length}
                 </span>
               )}
             </button>
@@ -423,7 +483,7 @@ export function ContextColumn({
           <button
             type="button"
             onClick={() => setActiveTab('NOTES')}
-            className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-1.5 py-1 rounded text-[11px] font-medium flex items-center gap-1 shrink-0 transition-colors cursor-pointer ${
               activeTab === 'NOTES'
                 ? 'bg-background text-foreground font-semibold shadow-xs border border-border/60'
                 : 'text-muted-foreground hover:text-foreground'
@@ -505,17 +565,25 @@ export function ContextColumn({
                   <h3 className="font-bold text-sm text-foreground leading-snug">
                     {problemData.title}
                   </h3>
-                  {problemData.url && (
-                    <a
-                      href={problemData.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-primary transition-colors shrink-0 p-0.5"
-                      title="Open on official platform"
-                    >
-                      <ExternalLink size={13} />
-                    </a>
-                  )}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <SaveToWishlistButton
+                      problem={problemData}
+                      wishlists={wishlists}
+                      roomId={_roomId}
+                      onWishlistsUpdated={refreshWishlists}
+                    />
+                    {problemData.url && (
+                      <a
+                        href={problemData.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-primary transition-colors shrink-0 p-0.5"
+                        title="Open on official platform"
+                      >
+                        <ExternalLink size={13} />
+                      </a>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
@@ -853,17 +921,36 @@ export function ContextColumn({
             </div>
           ) : (
             /* Empty State for Problem Tab */
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-4 space-y-2.5 text-muted-foreground">
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-4 space-y-3 text-muted-foreground">
               <div className="h-10 w-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-500">
                 <Code2 size={20} />
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-foreground">No Problem Loaded</p>
-                <p className="text-[11px] leading-relaxed max-w-[220px]">
+                <p className="text-[11px] leading-relaxed max-w-[230px]">
                   Paste a Codeforces problem ID (e.g.{' '}
                   <span className="font-mono text-primary font-bold">2290/H</span>) or LeetCode URL above, or use the 1-click{' '}
-                  <strong className="text-foreground">CodeV Extension</strong> directly on Codeforces/LeetCode.
+                  <Link to="/extension" className="font-semibold text-foreground hover:text-primary underline underline-offset-2">
+                    CodeV Extension
+                  </Link>{' '}
+                  directly on Codeforces &amp; LeetCode.
                 </p>
+              </div>
+              <div className="flex items-center gap-2 pt-0.5">
+                <a
+                  href={getExtensionDownloadUrl()}
+                  download="codev-arena-companion.zip"
+                  className="px-2.5 py-1 rounded-md bg-emerald-500/15 text-emerald-500 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 text-[11px] font-semibold inline-flex items-center gap-1.5 transition-colors"
+                >
+                  <Download size={12} />
+                  <span>Download Extension</span>
+                </a>
+                <Link
+                  to="/extension"
+                  className="px-2.5 py-1 rounded-md border border-border/60 bg-card/50 hover:bg-muted text-[11px] font-medium text-foreground transition-colors"
+                >
+                  Setup Guide
+                </Link>
               </div>
             </div>
           )}
@@ -920,16 +1007,40 @@ export function ContextColumn({
             </div>
 
             {queue.length === 0 ? (
-              <div className="py-6 text-center border border-dashed border-border/70 rounded-lg p-4 text-muted-foreground space-y-1">
+              <div className="py-6 text-center border border-dashed border-border/70 rounded-lg p-4 text-muted-foreground space-y-2">
                 <p className="text-xs font-medium text-foreground">No problems in session</p>
                 <p className="text-[11px] text-muted-foreground">
-                  Add from URL below or pull from a curated wishlist.
+                  Add from URL below or pull saved problems from your{' '}
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('WISHLISTS')}
+                    className="text-primary font-semibold hover:underline cursor-pointer"
+                  >
+                    Wishlists →
+                  </button>
                 </p>
               </div>
             ) : (
               <div className="space-y-1.5">
                 {queue.map((item, index) => {
                   const isActive = index === activeProblemIndex;
+                  const itemAsProblemData: ProblemData = {
+                    title: item.title,
+                    platform: item.platform,
+                    url: item.urlOrId.startsWith('http')
+                      ? item.urlOrId
+                      : item.id.startsWith('http')
+                        ? item.id
+                        : undefined,
+                    difficulty: item.difficulty,
+                    tags: item.tags,
+                    description: item.description,
+                    sampleCases: item.sampleCases.map((c) => ({
+                      input: c.input,
+                      output: c.output,
+                    })),
+                    codeSnippets: item.codeSnippets,
+                  };
                   return (
                     <div
                       key={item.id}
@@ -959,15 +1070,25 @@ export function ContextColumn({
                         </div>
 
                         <div className="flex items-center gap-1 shrink-0">
+                          <SaveToWishlistButton
+                            compact
+                            problem={itemAsProblemData}
+                            wishlists={wishlists}
+                            roomId={_roomId}
+                            onWishlistsUpdated={refreshWishlists}
+                          />
+
                           {/* Status toggle button */}
                           <button
                             type="button"
+                            disabled={isEffectiveReadOnly}
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (isEffectiveReadOnly) return;
                               const nextStatus = item.status === 'SOLVED' ? 'TODO' : 'SOLVED';
                               onUpdateStatus?.(item.id, nextStatus);
                             }}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition-colors ${
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition-colors disabled:opacity-50 ${
                               item.status === 'SOLVED'
                                 ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                                 : 'bg-muted text-muted-foreground hover:text-foreground'
@@ -981,17 +1102,19 @@ export function ContextColumn({
                             <span>{item.status === 'SOLVED' ? 'Solved' : 'To-Do'}</span>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onRemoveProblem?.(item.id);
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity"
-                            title="Remove from session"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                          {!isEffectiveReadOnly && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRemoveProblem?.(item.id);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity"
+                              title="Remove from session"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -1021,90 +1144,104 @@ export function ContextColumn({
             )}
           </div>
 
-          {/* 3. Add to Session Form */}
           {/* 3. Add to Session Form & Live Extension Status */}
           <div className="space-y-2.5 pt-1 border-t border-border/40">
             {/* 3.1 Add by URL / ID form */}
-            <form onSubmit={handleSessionImportAdd} className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-foreground flex items-center justify-between">
-                <span>Add Problem by URL or ID</span>
-              </label>
-              <div className="flex gap-1.5">
-                <input
-                  type="text"
-                  placeholder="LeetCode URL or CF ID (e.g. 2290H)..."
-                  value={sessionUrlInput}
-                  onChange={(e) => setSessionUrlInput(e.target.value)}
-                  disabled={isSessionImporting}
-                  className="flex-1 px-2.5 py-1 text-xs bg-background border border-border/70 rounded-md text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                <button
-                  type="submit"
-                  disabled={isSessionImporting || !sessionUrlInput.trim()}
-                  className="px-2.5 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50 flex items-center gap-1 cursor-pointer shrink-0"
-                >
-                  {isSessionImporting ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <>
-                      <Plus size={12} />
-                      <span>Add</span>
-                    </>
-                  )}
-                </button>
-              </div>
-              {sessionImportError && (
-                <p className="text-[10px] text-destructive">{sessionImportError}</p>
-              )}
-            </form>
+            {!isEffectiveReadOnly && (
+              <form onSubmit={handleSessionImportAdd} className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-foreground flex items-center justify-between">
+                  <span>Add Problem by URL or ID</span>
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    placeholder="LeetCode URL or CF ID (e.g. 2290H)..."
+                    value={sessionUrlInput}
+                    onChange={(e) => setSessionUrlInput(e.target.value)}
+                    disabled={isSessionImporting}
+                    className="flex-1 px-2.5 py-1 text-xs bg-background border border-border/70 rounded-md text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSessionImporting || !sessionUrlInput.trim()}
+                    className="px-2.5 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50 flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    {isSessionImporting ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <>
+                        <Plus size={12} />
+                        <span>Add</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                {sessionImportError && (
+                  <p className="text-[10px] text-destructive">{sessionImportError}</p>
+                )}
+              </form>
+            )}
 
             {/* 3.2 CodeV Extension & Companion Live Status */}
-            <div className="p-2 rounded-lg border border-border/60 bg-card/40 flex items-center justify-between text-xs">
+            <div className="p-2.5 rounded-lg border border-border/60 bg-card/40 flex items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                 <span className="text-[11px] font-medium text-foreground truncate">
-                  CodeV Companion & Extension
+                  CodeV Extension
                 </span>
-                <span className="text-[10px] font-mono text-muted-foreground">(:10043)</span>
               </div>
-              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                1-Click Import Ready
-              </span>
-            </div>
-          </div>
-
-          {/* 4. Curated Wishlists / Problem Collections */}
-          <div className="space-y-2 pt-2 border-t border-border/40">
-            <div className="flex items-center justify-between text-xs text-muted-foreground px-0.5">
-              <span className="font-semibold text-foreground flex items-center gap-1.5">
-                <Sparkles size={12} className="text-amber-400" />
-                <span>Curated Wishlists</span>
-              </span>
-              <span className="text-[10px] text-muted-foreground">1-Click Pull</span>
-            </div>
-
-            <div className="space-y-1.5">
-              {CURATED_WISHLISTS.map((w) => (
-                <div
-                  key={w.title}
-                  className="p-2.5 rounded-lg border border-border/60 bg-card/40 flex items-center justify-between gap-2 hover:bg-accent/30 transition-colors"
+              <div className="flex items-center gap-2 shrink-0">
+                <Link
+                  to="/extension"
+                  className="text-[10px] font-medium text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
                 >
-                  <div className="min-w-0">
-                    <h5 className="text-xs font-medium text-foreground truncate">{w.title}</h5>
-                    <p className="text-[10px] text-muted-foreground">{w.description}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handlePullWishlist(w)}
-                    className="px-2 py-1 text-[11px] font-semibold rounded bg-muted hover:bg-primary hover:text-primary-foreground transition-colors shrink-0 cursor-pointer"
-                  >
-                    Pull
-                  </button>
-                </div>
-              ))}
+                  Guide
+                </Link>
+                <a
+                  href={getExtensionDownloadUrl()}
+                  download="codev-arena-companion.zip"
+                  className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-500 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 text-[10px] font-semibold inline-flex items-center gap-1 transition-colors"
+                  title="Download pre-configured Chrome extension ZIP"
+                >
+                  <Download size={10} />
+                  <span>Get .zip</span>
+                </a>
+              </div>
             </div>
+
+            {/* 3.3 Quick link to separated Wishlists tab */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('WISHLISTS')}
+              className="w-full p-2.5 rounded-lg border border-border/60 bg-card/40 hover:bg-accent/30 flex items-center justify-between gap-2 text-xs transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-1.5 font-medium text-foreground">
+                <Bookmark size={12} className="text-amber-500" />
+                <span>Saved Wishlist Folders</span>
+              </span>
+              <span className="text-[10px] font-semibold text-primary">
+                Browse ({wishlists.length}) →
+              </span>
+            </button>
           </div>
         </div>
+      )}
+
+      {/* ── TAB CONTENT: WISHLIST FOLDERS & COLLECTIONS ────────────────── */}
+      {activeTab === 'WISHLISTS' && (
+        <WishlistsPanel
+          wishlists={wishlists}
+          isLoadingWishlists={isLoadingWishlists}
+          wishlistsError={wishlistsError}
+          onRefreshWishlists={refreshWishlists}
+          selectedWishlistId={selectedWishlistId}
+          onSelectWishlistId={setSelectedWishlistId}
+          isEffectiveReadOnly={isEffectiveReadOnly}
+          roomId={_roomId}
+          queue={queue}
+          onAddProblemToSession={onAddProblem}
+          onSwitchToSessionTab={() => setActiveTab('SESSION')}
+        />
       )}
 
       {/* ── TAB CONTENT: SCRATCHPAD NOTES ───────────────────────────────── */}

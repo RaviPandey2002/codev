@@ -635,13 +635,58 @@ export function useRoomWorkspace({
       );
 
       if (existingIndex !== -1) {
+        const existing = existingQueue[existingIndex];
+        // If incoming newProblem has codeSnippets and existing doesn't, merge them!
+        if (
+          (!existing.codeSnippets || existing.codeSnippets.length === 0) &&
+          newProblem.codeSnippets &&
+          newProblem.codeSnippets.length > 0
+        ) {
+          const updatedItem = { ...existing, codeSnippets: newProblem.codeSnippets };
+          const updated = [...existingQueue];
+          updated[existingIndex] = updatedItem;
+          setProblemQueue(updated);
+          problemQueueRef.current = updated;
+          ydocRef.current?.getMap('workspaceMeta').set('problemQueue', updated);
+
+          // If this is currently the active problem in the editor, check if editor has boilerplate
+          if (activeProblemIndexRef.current === existingIndex) {
+            setProblemData(updatedItem as any);
+            const currentCode =
+              editorHandleRef.current?.getCode() || ydocRef.current?.getText('monaco').toString() || '';
+            if (isBuiltInBoilerplate(currentCode)) {
+              const langSlug = language === 'python' ? 'python3' : language;
+              const snippet = updatedItem.codeSnippets.find(
+                (s) => s.langSlug === langSlug || s.langSlug === language
+              );
+              if (snippet?.code) {
+                const doc = ydocRef.current;
+                if (doc) {
+                  const sharedText = doc.getText('monaco');
+                  doc.transact(() => {
+                    sharedText.delete(0, sharedText.length);
+                    sharedText.insert(0, snippet.code);
+                  });
+                }
+                editorHandleRef.current?.setCode(snippet.code);
+              }
+            }
+          }
+        }
+
         if (autoSelect) {
           handleSelectQueueProblem(existingIndex);
         }
         return;
       }
 
-      const id = newProblem.url || `${newProblem.platform.toLowerCase()}_${Date.now()}`;
+      const id =
+        newProblem.url ||
+        `${newProblem.platform.toLowerCase()}_${
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+        }`;
       const item: QueueProblemItem = {
         id,
         platform: newProblem.platform,
