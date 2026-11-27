@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import type { ArenaPlatform, CodeSnippet, ProblemData, TestCase } from '@codev/shared';
 
 export interface CompanionTest {
@@ -28,6 +29,37 @@ export interface CompanionPayload {
 const GLOBAL_CHANNEL = 'global';
 const MAX_CHANNELS = 500;
 const latestByChannel = new Map<string, { problem: ProblemData; timestamp: number }>();
+
+const MAX_IMPORT_TOKENS = 500;
+const IMPORT_TOKEN_TTL_MS = 15 * 60 * 1000;
+const importTokens = new Map<string, { problem: ProblemData; createdAt: number }>();
+
+export function createImportToken(problem: ProblemData): string {
+  const now = Date.now();
+  for (const [k, v] of importTokens.entries()) {
+    if (now - v.createdAt > IMPORT_TOKEN_TTL_MS) {
+      importTokens.delete(k);
+    }
+  }
+  while (importTokens.size >= MAX_IMPORT_TOKENS) {
+    const oldest = importTokens.keys().next().value;
+    if (oldest) importTokens.delete(oldest);
+    else break;
+  }
+  const token = crypto.randomUUID();
+  importTokens.set(token, { problem, createdAt: now });
+  return token;
+}
+
+export function getProblemByImportToken(token: string): ProblemData | null {
+  const entry = importTokens.get(token);
+  if (!entry) return null;
+  if (Date.now() - entry.createdAt > IMPORT_TOKEN_TTL_MS) {
+    importTokens.delete(token);
+    return null;
+  }
+  return entry.problem;
+}
 
 function normalizeChannel(roomId?: string): string {
   const trimmed = roomId?.trim();
@@ -77,6 +109,7 @@ export function setLatestCompanionProblem(data: ProblemData, roomId?: string) {
 
 export function clearCompanionProblemsForTests() {
   latestByChannel.clear();
+  importTokens.clear();
 }
 
 export function mapCompanionPayloadToProblem(body: CompanionPayload): ProblemData {

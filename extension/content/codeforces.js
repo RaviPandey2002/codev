@@ -205,6 +205,10 @@
             btn.innerHTML = `${ICON_ALERT}<span>Retry CodeV</span>`;
             const detail = response?.error || chrome.runtime.lastError?.message || 'Check server URL in CodeV extension popup';
             showToast(`Could not deliver to CodeV: ${detail}`, true);
+          } else if (response.openedImportPage) {
+            btn.className = 'codev-btn codev-success';
+            btn.innerHTML = `${ICON_CHECK}<span>Opening CodeV...</span>`;
+            showToast(`Opening CodeV Arena to launch "${problemData.title}"...`);
           } else {
             btn.className = 'codev-btn codev-success';
             btn.innerHTML = `${ICON_CHECK}<span>Added to CodeV</span>`;

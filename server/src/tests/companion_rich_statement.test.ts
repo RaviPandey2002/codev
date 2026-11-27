@@ -4,9 +4,12 @@ import {
   mapCompanionPayloadToProblem,
   setLatestCompanionProblem,
   getLatestCompanionProblem,
+  createImportToken,
+  getProblemByImportToken,
   clearCompanionProblemsForTests,
   type CompanionPayload,
 } from '../services/companion_listener.js';
+import { getProblemExternalUrl } from '@codev/shared';
 
 describe('Companion Listener Rich Statements & Metadata', () => {
   afterEach(() => {
@@ -144,5 +147,28 @@ describe('Companion Listener Rich Statements & Metadata', () => {
     process.env.COMPANION_STRICT_ROOM_SCOPING = 'true';
     assert.equal(getLatestCompanionProblem(before, 'room-beta'), null);
     assert.equal(getLatestCompanionProblem(before, 'room-alpha')?.problem.title, 'Room A Problem');
+  });
+
+  it('creates and retrieves problems by short-lived importToken and resolves canonical URLs', () => {
+    const prob = mapCompanionPayloadToProblem({
+      name: '1. Two Sum',
+      platform: 'LEETCODE',
+      tests: [{ input: '[2,7,11,15]\n9', output: '[0,1]' }],
+    });
+
+    const token = createImportToken(prob);
+    assert.ok(token.length > 10);
+    assert.equal(getProblemByImportToken(token)?.title, '1. Two Sum');
+    assert.equal(getProblemByImportToken('nonexistent-token'), null);
+
+    // Canonical URL resolution even when explicit url is omitted
+    assert.equal(
+      getProblemExternalUrl({ platform: 'LEETCODE', title: '1. Two Sum' }),
+      'https://leetcode.com/problems/two-sum/'
+    );
+    assert.equal(
+      getProblemExternalUrl({ platform: 'CODEFORCES', contestId: 2290, index: 'H', title: 'H. Extra Road' }),
+      'https://codeforces.com/contest/2290/problem/H'
+    );
   });
 });

@@ -169,11 +169,6 @@ export function useRoomWorkspace({
         setProblemNotes(syncedNotes);
       }
 
-      const syncedProblem = meta.get('problemData') as ProblemData | null | undefined;
-      if (syncedProblem !== undefined) {
-        setProblemData(syncedProblem);
-      }
-
       const syncedQueue = meta.get('problemQueue') as QueueProblemItem[] | undefined;
       if (Array.isArray(syncedQueue)) {
         setProblemQueue(syncedQueue);
@@ -184,8 +179,15 @@ export function useRoomWorkspace({
       if (typeof syncedProbIdx === 'number') {
         setActiveProblemIndex(syncedProbIdx);
         activeProblemIndexRef.current = syncedProbIdx;
-        if (syncedQueue && syncedQueue[syncedProbIdx]) {
+        if (syncedProbIdx >= 0 && syncedQueue && syncedQueue[syncedProbIdx]) {
           setProblemData(syncedQueue[syncedProbIdx] as any);
+        } else if (syncedProbIdx < 0 || (syncedQueue && syncedQueue.length === 0)) {
+          setProblemData(null);
+        }
+      } else {
+        const syncedProblem = meta.get('problemData') as ProblemData | null | undefined;
+        if (syncedProblem !== undefined) {
+          setProblemData(syncedProblem);
         }
       }
 
@@ -523,7 +525,17 @@ export function useRoomWorkspace({
 
   const handleProblemDataChange = useCallback((data: ProblemData | null) => {
     setProblemData(data);
-    ydocRef.current?.getMap('workspaceMeta').set('problemData', data);
+    const doc = ydocRef.current;
+    if (!doc) return;
+    const meta = doc.getMap<any>('workspaceMeta');
+    doc.transact(() => {
+      meta.set('problemData', data);
+      if (data === null) {
+        setActiveProblemIndex(-1);
+        activeProblemIndexRef.current = -1;
+        meta.set('activeProblemIndex', -1);
+      }
+    });
   }, []);
 
   const handleSelectQueueProblem = useCallback(
@@ -691,6 +703,9 @@ export function useRoomWorkspace({
         id,
         platform: newProblem.platform,
         urlOrId: targetUrlOrId,
+        url: newProblem.url,
+        contestId: newProblem.contestId,
+        index: newProblem.index,
         title: newProblem.title,
         difficulty: newProblem.difficulty,
         tags: newProblem.tags,
@@ -717,19 +732,44 @@ export function useRoomWorkspace({
     [handleSelectQueueProblem]
   );
 
-  const handleRemoveFromQueue = useCallback((id: string) => {
-    const updated = problemQueueRef.current.filter((p) => p.id !== id);
-    setProblemQueue(updated);
-    problemQueueRef.current = updated;
-    ydocRef.current?.getMap('workspaceMeta').set('problemQueue', updated);
+  const handleRemoveFromQueue = useCallback(
+    (id: string) => {
+      const currentQueue = problemQueueRef.current;
+      const removedIdx = currentQueue.findIndex((p) => p.id === id);
+      if (removedIdx === -1) return;
 
-    if (activeProblemIndexRef.current >= updated.length) {
-      const newIdx = Math.max(0, updated.length - 1);
-      setActiveProblemIndex(newIdx);
-      activeProblemIndexRef.current = newIdx;
-      ydocRef.current?.getMap('workspaceMeta').set('activeProblemIndex', newIdx);
-    }
-  }, []);
+      const updated = currentQueue.filter((p) => p.id !== id);
+      const doc = ydocRef.current;
+      const prevActiveIdx = activeProblemIndexRef.current;
+
+      setProblemQueue(updated);
+      problemQueueRef.current = updated;
+      doc?.getMap('workspaceMeta').set('problemQueue', updated);
+
+      if (updated.length === 0) {
+        setActiveProblemIndex(-1);
+        activeProblemIndexRef.current = -1;
+        setProblemData(null);
+        doc?.transact(() => {
+          const meta = doc.getMap<any>('workspaceMeta');
+          meta.set('activeProblemIndex', -1);
+          meta.set('problemData', null);
+        });
+        return;
+      }
+
+      if (removedIdx === prevActiveIdx) {
+        const nextIdx = Math.min(removedIdx, updated.length - 1);
+        handleSelectQueueProblem(nextIdx);
+      } else if (removedIdx < prevActiveIdx) {
+        const shiftedIdx = prevActiveIdx - 1;
+        setActiveProblemIndex(shiftedIdx);
+        activeProblemIndexRef.current = shiftedIdx;
+        doc?.getMap('workspaceMeta').set('activeProblemIndex', shiftedIdx);
+      }
+    },
+    [handleSelectQueueProblem]
+  );
 
   const handleUpdateProblemStatus = useCallback((id: string, status: QueueProblemStatus) => {
     const updated = problemQueueRef.current.map((p) =>

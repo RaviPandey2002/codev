@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Code2,
   Copy,
+  ExternalLink,
   LayoutGrid,
   Loader2,
   Play,
@@ -15,7 +16,7 @@ import { Link } from 'react-router';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import type { ColumnId } from '@/components/room/room.constants';
 import { Button } from '@/components/ui/button';
-import type { QueueProblemItem, RoomDTO } from '@codev/shared';
+import { getProblemExternalUrl, type QueueProblemItem, type RoomDTO } from '@codev/shared';
 
 interface RoomNavbarProps {
   room: RoomDTO;
@@ -146,6 +147,30 @@ export function RoomNavbar({
                 {queue[activeProblemIndex]?.difficulty}
               </span>
             )}
+            {(() => {
+              const cur = queue[activeProblemIndex];
+              if (!cur) return null;
+              const extUrl = getProblemExternalUrl({
+                platform: cur.platform,
+                url: cur.url,
+                urlOrId: cur.urlOrId,
+                contestId: cur.contestId,
+                index: cur.index,
+                title: cur.title,
+              });
+              if (!extUrl) return null;
+              return (
+                <a
+                  href={extUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-0.5 rounded text-sky-500 hover:text-sky-400 hover:bg-sky-500/10 transition-colors"
+                  title="Open problem on official platform"
+                >
+                  <ExternalLink size={12} />
+                </a>
+              );
+            })()}
           </div>
         )}
       </div>

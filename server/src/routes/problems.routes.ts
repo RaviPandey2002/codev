@@ -5,7 +5,9 @@ import { auth } from '../hooks/authenticate.js';
 import { importProblem } from '../services/problems.service.js';
 import { rateLimit } from '../services/rate_limiter.js';
 import {
+  createImportToken,
   getLatestCompanionProblem,
+  getProblemByImportToken,
   setLatestCompanionProblem,
   mapCompanionPayloadToProblem,
   type CompanionPayload,
@@ -22,6 +24,21 @@ export default async function problemRoutes(app: FastifyInstance) {
     const since = query.since ? parseInt(query.since, 10) : 0;
     const latest = getLatestCompanionProblem(isNaN(since) ? 0 : since, query.roomId);
     return reply.status(200).send({ latest });
+  });
+
+  // Retrieve staged problem by short-lived token (used when extension opens /import tab)
+  app.get('/companion/import/:token', async (req, reply) => {
+    const { token } = req.params as { token: string };
+    const problem = getProblemByImportToken(token);
+    if (!problem) {
+      return reply.status(404).send({
+        error: {
+          code: 'IMPORT_TOKEN_NOT_FOUND',
+          message: 'Imported problem link expired or was not found. Click Open in CodeV again.',
+        },
+      });
+    }
+    return reply.status(200).send({ problem });
   });
 
   app.post('/companion', async (req, reply) => {
@@ -51,7 +68,13 @@ export default async function problemRoutes(app: FastifyInstance) {
     }
 
     setLatestCompanionProblem(problem, roomId);
-    return reply.status(200).send({ success: true, problem, roomId: roomId || 'global' });
+    const importToken = createImportToken(problem);
+    return reply.status(200).send({
+      success: true,
+      problem,
+      roomId: roomId || 'global',
+      importToken,
+    });
   });
 
   // Extension metadata & dynamic pre-configured ZIP archive download

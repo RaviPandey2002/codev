@@ -18,7 +18,10 @@ export default function LoginPage() {
 
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
+  const fromLoc = (location.state as { from?: { pathname: string; search?: string; hash?: string } })?.from;
+  const from = fromLoc
+    ? `${fromLoc.pathname}${fromLoc.search || ''}${fromLoc.hash || ''}`
+    : '/dashboard';
 
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
@@ -183,7 +186,7 @@ export default function LoginPage() {
           {/* Footer inside card */}
           <div className="pt-2 text-center text-xs text-muted-foreground border-t border-border/40">
             Don&apos;t have an account?{' '}
-            <Link to="/register" className="text-foreground font-semibold hover:text-primary transition-colors underline-offset-4 hover:underline">
+            <Link to="/register" state={location.state} className="text-foreground font-semibold hover:text-primary transition-colors underline-offset-4 hover:underline">
               Create one now
             </Link>
           </div>

@@ -30,6 +30,7 @@ import {
   Sparkles,
   Tag,
   Trash2,
+  X,
 } from 'lucide-react';
 import { getExtensionDownloadUrl } from '@/api/extension';
 import { importProblemApi } from '@/api/problems';
@@ -38,12 +39,13 @@ import { type ColumnId, DEFAULT_PROBLEM_NOTES } from '@/components/room/room.con
 import { SaveToWishlistButton } from '@/components/room/SaveToWishlistButton';
 import { WishlistsPanel } from '@/components/room/WishlistsPanel';
 import { getApiErrorMessage } from '@/lib/api';
-import type {
-  ArenaPlatform,
-  ProblemData,
-  QueueProblemItem,
-  QueueProblemStatus,
-  WishlistDTO,
+import {
+  getProblemExternalUrl,
+  type ArenaPlatform,
+  type ProblemData,
+  type QueueProblemItem,
+  type QueueProblemStatus,
+  type WishlistDTO,
 } from '@codev/shared';
 
 // ─── Utility ────────────────────────────────────────────────────────────────
@@ -572,16 +574,15 @@ export function ContextColumn({
                       roomId={_roomId}
                       onWishlistsUpdated={refreshWishlists}
                     />
-                    {problemData.url && (
-                      <a
-                        href={problemData.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-muted-foreground hover:text-primary transition-colors shrink-0 p-0.5"
-                        title="Open on official platform"
+                    {onProblemDataChange && (
+                      <button
+                        type="button"
+                        onClick={() => onProblemDataChange(null)}
+                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded transition-colors shrink-0 p-1 cursor-pointer"
+                        title="Clear problem statement"
                       >
-                        <ExternalLink size={13} />
-                      </a>
+                        <X size={13} />
+                      </button>
                     )}
                   </div>
                 </div>
@@ -595,6 +596,28 @@ export function ContextColumn({
                       {problemData.difficulty}
                     </span>
                   )}
+                  {(() => {
+                    const extUrl = getProblemExternalUrl(problemData);
+                    if (!extUrl) return null;
+                    const label =
+                      problemData.platform === 'LEETCODE'
+                        ? 'LeetCode'
+                        : problemData.platform === 'CODEFORCES'
+                          ? 'Codeforces'
+                          : 'Source';
+                    return (
+                      <a
+                        href={extUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/10 hover:bg-sky-500/20 text-sky-500 dark:text-sky-400 border border-sky-500/25 font-medium transition-colors"
+                        title={`Open problem on ${label} to submit solution`}
+                      >
+                        <span>Open on {label}</span>
+                        <ExternalLink size={10} />
+                      </a>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -758,6 +781,22 @@ export function ContextColumn({
                               >
                                 {showTags ? <Eye size={10} /> : <EyeOff size={10} />}
                                 <span>{showTags ? 'Shown' : 'Hidden'}</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {onProblemDataChange && (
+                            <div className="pt-2 border-t border-border/50 flex items-center justify-between">
+                              <span className="text-[11px] text-muted-foreground">Statement View</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsReaderSettingsOpen(false);
+                                  onProblemDataChange(null);
+                                }}
+                                className="px-2 py-0.5 rounded text-[10px] font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-border/50 transition-colors cursor-pointer"
+                              >
+                                Clear View
                               </button>
                             </div>
                           )}
@@ -1024,14 +1063,20 @@ export function ContextColumn({
               <div className="space-y-1.5">
                 {queue.map((item, index) => {
                   const isActive = index === activeProblemIndex;
+                  const itemExternalUrl = getProblemExternalUrl({
+                    platform: item.platform,
+                    url: item.url,
+                    urlOrId: item.urlOrId,
+                    contestId: item.contestId,
+                    index: item.index,
+                    title: item.title,
+                  });
                   const itemAsProblemData: ProblemData = {
                     title: item.title,
                     platform: item.platform,
-                    url: item.urlOrId.startsWith('http')
-                      ? item.urlOrId
-                      : item.id.startsWith('http')
-                        ? item.id
-                        : undefined,
+                    url: itemExternalUrl || undefined,
+                    contestId: item.contestId,
+                    index: item.index,
                     difficulty: item.difficulty,
                     tags: item.tags,
                     description: item.description,
@@ -1047,7 +1092,12 @@ export function ContextColumn({
                       onClick={() => {
                         onSelectProblem?.(index);
                       }}
-                      className={`group p-2.5 rounded-lg border transition-all cursor-pointer ${
+                      onDoubleClick={() => {
+                        onSelectProblem?.(index);
+                        setActiveTab('PROBLEM');
+                      }}
+                      title="Click to select · Double-click to open statement"
+                      className={`group p-2.5 rounded-lg border transition-all cursor-pointer select-none ${
                         isActive
                           ? 'bg-primary/10 border-primary/40 shadow-xs ring-1 ring-primary/20'
                           : 'bg-card/60 border-border/60 hover:bg-accent/40'
@@ -1125,6 +1175,20 @@ export function ContextColumn({
                         {item.difficulty && (
                           <span className="px-1 rounded bg-muted/60">{item.difficulty}</span>
                         )}
+                        {itemExternalUrl && (
+                          <a
+                            href={itemExternalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-muted/60 hover:bg-sky-500/15 text-muted-foreground hover:text-sky-400 border border-border/50 transition-colors"
+                            title="Open problem on official platform"
+                          >
+                            <ExternalLink size={10} />
+                            <span>Source</span>
+                          </a>
+                        )}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1132,7 +1196,7 @@ export function ContextColumn({
                             onSelectProblem?.(index);
                             setActiveTab('PROBLEM');
                           }}
-                          className="ml-auto text-primary hover:underline"
+                          className="ml-auto text-primary hover:underline cursor-pointer"
                         >
                           View Statement →
                         </button>

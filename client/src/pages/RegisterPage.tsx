@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { registerSchema, type RegisterInput } from '@codev/shared';
-import { Link, useNavigate, Navigate } from 'react-router';
+import { Link, useLocation, useNavigate, Navigate } from 'react-router';
 import { Eye, EyeOff, Loader2, Code2, Mail, Lock, User as UserIcon, ArrowRight, ArrowLeft } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
@@ -17,12 +17,17 @@ export default function RegisterPage() {
   const [serverError, setServerError] = useState<string | null>(null);
 
   const navigate = useNavigate();
+  const location = useLocation();
+  const fromLoc = (location.state as { from?: { pathname: string; search?: string; hash?: string } })?.from;
+  const from = fromLoc
+    ? `${fromLoc.pathname}${fromLoc.search || ''}${fromLoc.hash || ''}`
+    : '/dashboard';
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
   const setUser = useAuthStore((s) => s.setUser);
 
   if (!isLoading && user) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={from} replace />;
   }
 
   const {
@@ -43,7 +48,7 @@ export default function RegisterPage() {
       setServerError(null);
       const res = await api.post<{ user: User; accessToken: string }>('/auth/register', data);
       setUser(res.data.user);
-      navigate('/dashboard');
+      navigate(from, { replace: true });
     } catch (err) {
       setServerError(getApiErrorMessage(err));
     }

@@ -1,6 +1,6 @@
 /**
  * CodeV Arena Companion - Background Service Worker
- * Relays problem payloads directly to active CodeV room tabs and to the configured API server.
+ * Relays problem payloads directly to active CodeV room tabs or opens /import when no room tab is open.
  */
 
 importScripts('../config.js');
@@ -21,6 +21,15 @@ function isLocalHostname(urlStr) {
     return host === 'localhost' || host === '127.0.0.1';
   } catch {
     return false;
+  }
+}
+
+function toOriginPattern(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    return `${parsed.protocol}//${parsed.host}/*`;
+  } catch {
+    return null;
   }
 }
 
@@ -51,9 +60,11 @@ async function handleSendProblem(problem) {
     clientHost = '';
   }
 
-  let delivered = false;
+  let deliveredToOpenTab = false;
+  let deliveredToServer = false;
   let lastErr = null;
   let detectedRoomId = null;
+  let importToken = null;
 
   // 1. Inspect open CodeV room tabs for instant delivery & room scoping
   try {
@@ -64,7 +75,6 @@ async function handleSendProblem(problem) {
       return tab.url.includes('localhost:5173') || tab.url.includes('127.0.0.1:5173');
     });
 
-    // Prefer active tab in current window if multiple rooms are open
     matchingTabs.sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)));
 
     for (const tab of matchingTabs) {
@@ -81,14 +91,31 @@ async function handleSendProblem(problem) {
             },
             args: [problem],
           });
-          delivered = true;
+          deliveredToOpenTab = true;
         } catch {
-          // Optional host permission fallback if custom client domain wasn't pre-granted
+          // Fallback to server API delivery
         }
       }
     }
   } catch {
     // Tabs permission fallback
+  }
+
+  // Check host permission explicitly for clearer diagnostics when custom domains are used
+  const apiPattern = toOriginPattern(apiUrl);
+  if (apiPattern && chrome.permissions?.contains) {
+    try {
+      const hasPerm = await chrome.permissions.contains({ origins: [apiPattern] });
+      if (!hasPerm && !deliveredToOpenTab) {
+        throw new Error(
+          `Permission missing for ${apiUrl}. Open the CodeV extension popup (⚙️) and click Save & Test.`
+        );
+      }
+    } catch (permErr) {
+      if (permErr.message?.includes('Permission missing')) {
+        throw permErr;
+      }
+    }
   }
 
   const companionPayload = {
@@ -105,7 +132,6 @@ async function handleSendProblem(problem) {
     difficulty: problem.difficulty,
     tags: problem.tags,
     platform: problem.platform,
-    codeSnippets: problem.codeSnippets,
     inputSpecification: problem.inputSpecification,
     outputSpecification: problem.outputSpecification,
     roomId: detectedRoomId || undefined,
@@ -123,16 +149,23 @@ async function handleSendProblem(problem) {
       body: JSON.stringify(companionPayload),
     });
     if (res.ok) {
-      delivered = true;
+      deliveredToServer = true;
+      try {
+        const data = await res.json();
+        if (data?.importToken) {
+          importToken = data.importToken;
+        }
+      } catch {}
     } else {
-      lastErr = new Error(`Server responded with ${res.status}`);
+      lastErr = new Error(`Server ${apiUrl} responded with HTTP ${res.status}`);
     }
   } catch (err) {
+    console.warn('[CodeV SW] Failed to deliver to API server:', apiUrl, err);
     lastErr = err;
   }
 
   // 3. Fallback to standalone local Companion port (:10043) only when running locally
-  if (!delivered && localCompanionUrl && isLocalHostname(apiUrl)) {
+  if (!deliveredToServer && localCompanionUrl && isLocalHostname(apiUrl)) {
     try {
       const localUrl = detectedRoomId
         ? `${localCompanionUrl}/?roomId=${encodeURIComponent(detectedRoomId)}`
@@ -144,26 +177,44 @@ async function handleSendProblem(problem) {
         body: JSON.stringify(companionPayload),
       });
       if (res.ok) {
-        delivered = true;
+        deliveredToServer = true;
       }
     } catch (err) {
       lastErr = lastErr || err;
     }
   }
 
+  const delivered = deliveredToOpenTab || deliveredToServer;
+
   await chrome.storage.local.set({
     lastProblem: problem,
     lastSentAt: Date.now(),
   });
 
-  if (delivered) {
-    return {
-      success: true,
-      title: problem.title,
-      roomId: detectedRoomId,
-      target: apiUrl,
-    };
+  if (!delivered) {
+    const reason = lastErr?.message || 'Connection failed';
+    throw new Error(`Could not reach ${apiUrl} (${reason}). Check ⚙️ Server URL in extension popup.`);
   }
 
-  throw new Error(lastErr?.message || `Could not connect to CodeV server (${apiUrl})`);
+  // 4. If NO CodeV room tab is open in the browser, open /import?token=... in a tab!
+  let openedImportPage = false;
+  if (!detectedRoomId && deliveredToServer) {
+    const targetUrl = importToken
+      ? `${clientUrl}/import?token=${encodeURIComponent(importToken)}`
+      : `${clientUrl}/import`;
+    try {
+      await chrome.tabs.create({ url: targetUrl, active: true });
+      openedImportPage = true;
+    } catch (tabErr) {
+      console.warn('[CodeV SW] Could not open /import tab:', tabErr);
+    }
+  }
+
+  return {
+    success: true,
+    title: problem.title,
+    roomId: detectedRoomId,
+    target: apiUrl,
+    openedImportPage,
+  };
 }

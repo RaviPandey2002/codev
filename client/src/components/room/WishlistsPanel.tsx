@@ -5,6 +5,7 @@ import {
   Check,
   Copy,
   Edit2,
+  ExternalLink,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 import {
   getCanonicalProblemKey,
+  getProblemExternalUrl,
   type ProblemData,
   type QueueProblemItem,
   type WishlistDTO,
@@ -557,6 +559,7 @@ export function WishlistsPanel({
               <div className="space-y-1.5">
                 {filteredItems.map((item) => {
                   const inSession = queueKeys.has(item.canonicalKey);
+                  const extUrl = getProblemExternalUrl(item.problem);
                   return (
                     <div
                       key={item.id}
@@ -584,6 +587,17 @@ export function WishlistsPanel({
                               <span className="text-muted-foreground">
                                 {item.problem.sampleCases.length} cases
                               </span>
+                            )}
+                            {extUrl && (
+                              <a
+                                href={extUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-0.5 text-sky-500 hover:text-sky-400 transition-colors"
+                                title="Open problem on official platform"
+                              >
+                                <ExternalLink size={10} />
+                              </a>
                             )}
                           </div>
                         </div>

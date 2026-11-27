@@ -1,9 +1,9 @@
 import { AlertCircle, ArrowLeft, CheckCircle2, Code2, Loader2, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router';
 
 import { getRoomDetailsApi } from '@/api/rooms';
-import { getLatestCompanionProblemApi, importProblemApi } from '@/api/problems';
+import { getCompanionProblemByTokenApi, getLatestCompanionProblemApi, importProblemApi } from '@/api/problems';
 import { ContextColumn } from '@/components/room/ContextColumn';
 import { EditorColumn } from '@/components/room/EditorColumn';
 import { IoColumn } from '@/components/room/IoColumn';
@@ -20,6 +20,9 @@ import type { ArenaPlatform, RoomDTO, RoomRole } from '@codev/shared';
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const consumedImportRef = useRef<string | null>(null);
   const user = useAuthStore((s) => s.user);
 
   const [room, setRoom] = useState<RoomDTO | null>(null);
@@ -230,6 +233,44 @@ export default function RoomPage() {
 
     return () => clearInterval(interval);
   }, [handleAddToQueue, roomId]);
+
+  // Handle problem forwarded from /import launcher (?importToken=... or router state)
+  useEffect(() => {
+    if (!isSynced) return;
+    const token = searchParams.get('importToken');
+    const stateProblem = (location.state as { importedProblem?: any } | null)?.importedProblem;
+    const importKey = token || (stateProblem ? `state:${stateProblem.title}` : null);
+    if (!importKey || consumedImportRef.current === importKey) return;
+
+    consumedImportRef.current = importKey;
+
+    const finishImport = (prob: any) => {
+      handleAddToQueue(prob, true);
+      setImportNotification({
+        title: prob.title,
+        count: prob.sampleCases?.length || 0,
+      });
+      setTimeout(() => setImportNotification(null), 4500);
+      if (token) {
+        const next = new URLSearchParams(searchParams);
+        next.delete('importToken');
+        setSearchParams(next, { replace: true });
+      }
+    };
+
+    if (stateProblem) {
+      finishImport(stateProblem);
+      return;
+    }
+
+    if (token) {
+      getCompanionProblemByTokenApi(token)
+        .then((prob) => finishImport(prob))
+        .catch(() => {
+          // Ignore expired token
+        });
+    }
+  }, [isSynced, searchParams, setSearchParams, location.state, handleAddToQueue]);
 
   const copyRoomLink = () => {
     if (!roomId) return;

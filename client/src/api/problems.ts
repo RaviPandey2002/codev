@@ -16,3 +16,10 @@ export async function getLatestCompanionProblemApi(
   );
   return res.data.latest;
 }
+
+export async function getCompanionProblemByTokenApi(token: string): Promise<ProblemData> {
+  const res = await api.get<{ problem: ProblemData }>(
+    `/problems/companion/import/${encodeURIComponent(token)}`
+  );
+  return res.data.problem;
+}

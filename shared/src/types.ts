@@ -95,6 +95,9 @@ export interface QueueProblemItem {
   id: string;
   platform: ArenaPlatform;
   urlOrId: string;
+  url?: string;
+  contestId?: number;
+  index?: string;
   title: string;
   difficulty?: string;
   tags?: string[];

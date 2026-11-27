@@ -68,3 +68,43 @@ export function getCanonicalProblemKey(input: ProblemKeyInput): string {
   }
   return `${platform.toLowerCase()}:${slugifyTitle(input.title) || 'unknown'}`.slice(0, 255);
 }
+
+/**
+ * Resolves the canonical public URL for solving/submitting on the real platform
+ * (e.g. LeetCode or Codeforces) even if only `urlOrId`, `contestId`/`index`, or title is stored.
+ */
+export function getProblemExternalUrl(input: ProblemKeyInput): string | null {
+  const urlCandidate = (input.url || '').trim();
+  if (/^https?:\/\//i.test(urlCandidate)) {
+    return urlCandidate;
+  }
+
+  const urlOrIdCandidate = (input.urlOrId || '').trim();
+  if (/^https?:\/\//i.test(urlOrIdCandidate)) {
+    return urlOrIdCandidate;
+  }
+
+  if (input.platform === 'CODEFORCES') {
+    if (input.contestId && input.index) {
+      return `https://codeforces.com/contest/${input.contestId}/problem/${input.index}`;
+    }
+    const shorthand = urlOrIdCandidate.match(/^(\d+)\s*[/_-]?\s*([A-Za-z0-9]+)$/);
+    if (shorthand?.[1] && shorthand?.[2]) {
+      return `https://codeforces.com/contest/${shorthand[1]}/problem/${shorthand[2].toUpperCase()}`;
+    }
+    return null;
+  }
+
+  if (input.platform === 'LEETCODE') {
+    if (/^[a-z0-9-]+$/i.test(urlOrIdCandidate)) {
+      return `https://leetcode.com/problems/${urlOrIdCandidate.toLowerCase()}/`;
+    }
+    const slug = slugifyTitle(input.title || urlOrIdCandidate);
+    if (slug && slug !== 'imported-problem' && slug !== 'leetcode-problem') {
+      return `https://leetcode.com/problems/${slug}/`;
+    }
+    return null;
+  }
+
+  return null;
+}
